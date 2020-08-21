@@ -96,14 +96,15 @@ struct SoundManager
 		//}
 	}
 
-	void play(std::string sound) {
+	static void play(std::string sound) {
 		Mix_PlayChannel(-1, chunks[sound], 0);
 	}
 
 	//std::vector<> chuncks;
 
-	std::unordered_map<std::string, Mix_Chunk*> chunks;
+	static std::unordered_map<std::string, Mix_Chunk*> chunks;
 };
+
 
 struct Text
 {
@@ -172,20 +173,24 @@ SDL_Renderer* SDL::Context::renderer = NULL;
 SDL_Event SDL::Context::event;
 SDL_Texture* Assets::Sheet::texture = NULL;
 TTF_Font* SDL::Context::font = NULL;
+std::unordered_map<std::string, Mix_Chunk*> SoundManager::chunks;
+
 
 struct GameObject;
 
 struct InputHandler
 {
 	virtual void handle_input(GameObject& gameobject) = 0;
+
+	bool pressed[512];
 };
 
 //22 hor
 struct GameObject
 {
-	GameObject(int x, int y, int w, int h, int tilex, int tiley) :
+	GameObject(int x, int y, int w, int h, int tilex, int tiley, std::string tag) :
 		tile{ tile }, dst{ x,y,w,h }, src{ tilex * 16,tiley * 16,16,16 },
-		angle{ 0.0 }, flip{ SDL_FLIP_NONE }{
+		angle{ 0.0 }, flip{ SDL_FLIP_NONE }, tag{tag}{
 	}
 
 	void draw() {
@@ -202,15 +207,11 @@ struct GameObject
 	double angle;
 	SDL_RendererFlip flip;
 	SDL_Rect dst, src;
+	std::string tag;
 
-	std::unique_ptr<InputHandler> input_handler{nullptr};
-};
-
-struct State 
-{
-	virtual void update() = 0;
-	virtual void handle_input() = 0;
-	virtual void draw() = 0;
+	std::unique_ptr<InputHandler> input_handler{ nullptr };
+	//std::unique_ptr<AI> ai{ nullptr };
+	//std::unique_ptr<Animation> animation{ nullptr };
 };
 
 struct Button
@@ -254,22 +255,28 @@ struct Menu
 	Menu(int x, int y, int w, int h, int padding) {
 		buttons.reserve(3);
 
-		int bh = (h / 3);
-		buttons.emplace_back(x, y, w, bh, "PLAY", padding);
-		buttons.emplace_back(x, y+bh+padding, w, bh, "OPTIONS", padding);
-		buttons.emplace_back(x, y+(bh*2)+padding, w, bh, "EXIT", padding);
+		int bh = (h / 3);		
+		int by = y;
+		buttons.emplace_back(x, by, w, bh, "PLAY", padding);
+		by += bh+padding;
+		buttons.emplace_back(x, by, w, bh, "OPTIONS", padding);
+		by += bh+padding;
+		buttons.emplace_back(x, by, w, bh, "EXIT", padding);
 	}
 
 	int handle_input() {
 		for (auto& b : buttons) {
 			if (b.handle_input()) {
 				if (b.text_str == "PLAY") {
+					SDL_Log("PLAY");
 					return 1;
 				}
 				if (b.text_str == "OPTIONS") {
+					SDL_Log("OPTIONS");
 					return 2;
 				}
 				if (b.text_str == "EXIT") {
+					SDL_Log("EXIT");
 					return 3;
 				}
 			}
@@ -287,23 +294,33 @@ struct Menu
 	std::vector<Button> buttons;
 };
 
+///////////////////
+//////STATES///////
+///////////////////
+
+struct State
+{
+	virtual std::unique_ptr<State> update() = 0;
+	virtual std::unique_ptr<State> handle_input() = 0;
+	virtual void draw() = 0;
+};
+
+struct PlayingState;
 struct MenuState : State
 {
-	MenuState() : menu{ screen_w / 2, screen_h / 2, 100, 45 * 3, 7 }
+	MenuState() : menu{ (screen_w / 2)-100, (screen_h / 2)-45*3, 100, 45 * 3, 7 }
 	{
 	}
 	
-	void update() override{
+	std::unique_ptr<State> update() override{
+		return nullptr;
 	}
 	
-	void handle_input() override{
-	
-	}
+	std::unique_ptr<State> handle_input() override;
 	
 	void draw() override{
-	
+		menu.draw();
 	}
-
 
 	Menu menu;
 };
@@ -314,22 +331,40 @@ struct PlayerInputHandler : InputHandler
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
 		if (kbstate[SDL_SCANCODE_RIGHT]) {
 			gameobject.dst.x += 5;
+
+			gameobject.flip = SDL_FLIP_NONE;
+
+			pressed[SDL_SCANCODE_RIGHT] = true;
 		}
 		if (kbstate[SDL_SCANCODE_LEFT]) {
 			gameobject.dst.x -= 5;
+			gameobject.flip = SDL_FLIP_HORIZONTAL;
+		}
+		if (kbstate[SDL_SCANCODE_UP]) {
+			gameobject.dst.y -= 5;
+		}
+		if (kbstate[SDL_SCANCODE_DOWN]) {
+			gameobject.dst.y += 5;
 		}
 	}
 };
 
 struct PlayingState : State
 {
-	PlayingState() : player{ screen_w / 2,screen_h / 2,32,32,29,0 } {
+	PlayingState() : player{ screen_w / 2,screen_h / 2,32,32,29,0, "player" } {
 
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
 	}
-	void update() override {}
-	void handle_input() override {
+	std::unique_ptr<State> update() override { return nullptr; }
+	std::unique_ptr<State> handle_input() override {
 		player.input_handler->handle_input(player);
+
+		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
+		if (kbstate[SDL_SCANCODE_ESCAPE]) {
+			return std::make_unique<MenuState>();
+		}
+
+		return nullptr;
 	}
 	void draw() override {
 		player.draw();
@@ -341,22 +376,49 @@ struct PlayingState : State
 
 };
 
+std::unique_ptr<State> MenuState::handle_input(){
+	switch (menu.handle_input()) {
+	case 0:
+		return nullptr;
+	case 1:
+		return std::make_unique<PlayingState>();
+	case 2:
+		return std::make_unique<PlayingState>();
+	case 3:
+		return std::make_unique<PlayingState>();
+	default:
+		return std::make_unique<PlayingState>();
+	}
+}
+
 struct Game
 {
 	Game(){
-		
-		
+		state = std::make_unique<MenuState>();
 	}
 
 	bool update() {
+		auto new_state = state->update();
+		if(new_state != nullptr) {
+			state = std::move(new_state);
+		}
+
+		//state = std::move(state->update());
 		return true;
 	}
 	
 	bool handle_input() {
+		auto new_state = state->handle_input();
+		if (new_state != nullptr) {
+			state = std::move(new_state);
+		}
+		
+		//state = std::move(state->handle_input());
 		return true;
 	}
 
 	void draw() {
+		state->draw();
 	}
 
 	std::unique_ptr<State> state{nullptr};
@@ -373,24 +435,16 @@ int main(int argc, char* args[])
 	bool running = true;
 
 	Uint32 startFTime = SDL_GetTicks();
-	float fps = (1.0f / 55.0f)*1000.0f;
+	float fps = (1.0f / 24.0f)*1000.0f;
 
 	std::vector<GameObject> objects;
 	std::vector<Text> texts;
 
 	texts.reserve(50);
-	
-	SoundManager soundManager;
 
 	bool clicked = false;
 
 	Game game;
-
-	Button button1(0, 0, 100, 45, "PLAY", 7);
-	Button button2(0, 50, 100, 45, "OPTIONS", 7);
-	Button button3(0, 100, 100, 45, "EXIT", 7);
-
-	Menu menu(screen_w/2, screen_h / 2, 100, 45*3, 7);
 
 	while (running) {
 
@@ -420,7 +474,7 @@ int main(int argc, char* args[])
 			}
 			if (SDL::Context::event.type == SDL_MOUSEBUTTONDOWN) {
 				if (!clicked) {
-					objects.emplace_back(rand() % screen_w, rand() % screen_h, 32, 32, rand() % 47, rand() % 21);
+					//objects.emplace_back(rand() % screen_w, rand() % screen_h, 32, 32, rand() % 47, rand() % 21);
 					if (texts.size() < 20) {
 						texts.emplace_back("Desturoy", rand() % screen_w, rand() % screen_h, 25);
 					}
@@ -437,7 +491,7 @@ int main(int argc, char* args[])
 			}
 			if (SDL::Context::event.type == SDL_KEYDOWN) {
 				if (SDL::Context::event.key.keysym.sym == SDLK_RIGHT) {
-					soundManager.play("wilhelm");
+					//soundManager.play("wilhelm");
 				}
 			}
 			if (SDL::Context::event.type == SDL_KEYUP) {
@@ -450,25 +504,27 @@ int main(int argc, char* args[])
 			}
 		}
 
-		menu.handle_input();
+		//menu.handle_input();
+		//menu.draw();
+
 		game.handle_input();
 		game.draw();
-		menu.draw();
-
-
-		button1.draw();
-		button2.draw();
-		button3.draw();
-
-		for (auto& g : objects) {
-			g.draw();
-		}
-
-		for (auto& t : texts) {
-			t.render();
-		}
 		
-		SDL_SetRenderDrawColor(SDL::Context::renderer, 125, 125, 0, 255);
+
+		//button1.draw();
+		//button2.draw();
+		//button3.draw();
+		
+
+		//for (auto& g : objects) {
+		//	g.draw();
+		//}
+		//
+		//for (auto& t : texts) {
+		//	t.render();
+		//}
+		
+		SDL_SetRenderDrawColor(SDL::Context::renderer, 255, 255, 255, 255);
 		SDL_RenderPresent(SDL::Context::renderer);
 
 
