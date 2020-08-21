@@ -182,7 +182,19 @@ struct InputHandler
 {
 	virtual void handle_input(GameObject& gameobject) = 0;
 
-	bool pressed[512];
+	bool pressed[512]{false};
+};
+
+struct AI
+{
+	virtual void update(GameObject& gameobject) = 0;
+};
+
+struct Animation
+{
+	virtual void update(GameObject& gameobject) = 0;
+
+	Timer timer;
 };
 
 //22 hor
@@ -210,8 +222,8 @@ struct GameObject
 	std::string tag;
 
 	std::unique_ptr<InputHandler> input_handler{ nullptr };
-	//std::unique_ptr<AI> ai{ nullptr };
-	//std::unique_ptr<Animation> animation{ nullptr };
+	std::unique_ptr<AI> ai{ nullptr };
+	std::unique_ptr<Animation> animation{ nullptr };
 };
 
 struct Button
@@ -327,26 +339,63 @@ struct MenuState : State
 
 struct PlayerInputHandler : InputHandler
 {
+	PlayerInputHandler() {
+		//for (int i = 0; i < 512; i++) {
+		//	pressed[i] = false;
+		//}
+	}
+
+	void hop(GameObject& gameobject) {
+		if (!hoping) {
+			gameobject.dst.y += 2;
+			hoping = true;
+		}
+		else {
+			gameobject.dst.y -= 2;
+			hoping = false;
+		}
+	}
+
 	void handle_input(GameObject& gameobject) {
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
-		if (kbstate[SDL_SCANCODE_RIGHT]) {
+		if (kbstate[SDL_SCANCODE_RIGHT] && !pressed[SDL_SCANCODE_RIGHT]) {
 			gameobject.dst.x += 5;
+
+			hop(gameobject);
 
 			gameobject.flip = SDL_FLIP_NONE;
 
 			pressed[SDL_SCANCODE_RIGHT] = true;
 		}
+		if (!kbstate[SDL_SCANCODE_RIGHT]){
+			pressed[SDL_SCANCODE_RIGHT] = false;
+		}
+
+		if (kbstate[SDL_SCANCODE_S] && !pressed[SDL_SCANCODE_S]) {
+			SoundManager::play("wilhelm");
+			pressed[SDL_SCANCODE_S] = true;
+		}
+		if (!kbstate[SDL_SCANCODE_S]) {
+			pressed[SDL_SCANCODE_S] = false;
+		}
+
+
 		if (kbstate[SDL_SCANCODE_LEFT]) {
 			gameobject.dst.x -= 5;
+			hop(gameobject);
 			gameobject.flip = SDL_FLIP_HORIZONTAL;
 		}
 		if (kbstate[SDL_SCANCODE_UP]) {
 			gameobject.dst.y -= 5;
+			hop(gameobject);
 		}
 		if (kbstate[SDL_SCANCODE_DOWN]) {
 			gameobject.dst.y += 5;
+			hop(gameobject);
 		}
 	}
+
+	bool hoping = false;
 };
 
 struct PlayingState : State
@@ -422,6 +471,7 @@ struct Game
 	}
 
 	std::unique_ptr<State> state{nullptr};
+	
 
 };
 
@@ -445,6 +495,7 @@ int main(int argc, char* args[])
 	bool clicked = false;
 
 	Game game;
+	SoundManager sound;
 
 	while (running) {
 
