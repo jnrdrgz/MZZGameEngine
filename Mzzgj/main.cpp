@@ -210,9 +210,15 @@ struct GameObject
 	}
 	
 	void set_input_handler(std::unique_ptr<InputHandler> ptr) {
-		//input_handler.swap(ptr);
-
 		input_handler = std::move(ptr);
+	}
+
+	void set_ai(std::unique_ptr<AI> ptr) {
+		ai = std::move(ptr);
+	}
+
+	void set_animation(std::unique_ptr<Animation> ptr) {
+		animation = std::move(ptr);
 	}
 
 	int tile;
@@ -398,13 +404,44 @@ struct PlayerInputHandler : InputHandler
 	bool hoping = false;
 };
 
+struct EnemyAI : AI {
+	EnemyAI() : v{ 4 } , vx{ v }, vy{ v } {}
+
+	void update(GameObject& gameobject) {
+		gameobject.dst.x += vx;
+		gameobject.dst.y += vy;
+
+		if (gameobject.dst.y > screen_h) {
+			vy = -v;
+		}
+		if (gameobject.dst.y < 0) {
+			vy = v;
+		}
+		if (gameobject.dst.x > screen_w) {
+			vx = -v;
+		}
+		if (gameobject.dst.y < 0) {
+			vx = v;
+		}
+	}
+
+	int v, vx, vy;
+};
+
 struct PlayingState : State
 {
-	PlayingState() : player{ screen_w / 2,screen_h / 2,32,32,29,0, "player" } {
-
+	PlayingState() : 
+		player{ screen_w / 2,screen_h / 2,32,32,29,0, "player" },
+		enemy{ 0,0,32,32,31,8, "enemy" }
+	{
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
+		enemy.set_ai(std::make_unique<EnemyAI>());
 	}
-	std::unique_ptr<State> update() override { return nullptr; }
+	std::unique_ptr<State> update() override { 
+		enemy.ai->update(enemy);
+
+		return nullptr; 
+	}
 	std::unique_ptr<State> handle_input() override {
 		player.input_handler->handle_input(player);
 
@@ -417,9 +454,11 @@ struct PlayingState : State
 	}
 	void draw() override {
 		player.draw();
+		enemy.draw();
 	}
 
 	GameObject player;
+	GameObject enemy;
 
 	//physics physics
 
@@ -471,8 +510,6 @@ struct Game
 	}
 
 	std::unique_ptr<State> state{nullptr};
-	
-
 };
 
 int main(int argc, char* args[])
@@ -495,7 +532,7 @@ int main(int argc, char* args[])
 	bool clicked = false;
 
 	Game game;
-	SoundManager sound;
+	SoundManager sound; // a donde meto esto, no static?
 
 	while (running) {
 
@@ -555,25 +592,9 @@ int main(int argc, char* args[])
 			}
 		}
 
-		//menu.handle_input();
-		//menu.draw();
-
 		game.handle_input();
+		game.update();
 		game.draw();
-		
-
-		//button1.draw();
-		//button2.draw();
-		//button3.draw();
-		
-
-		//for (auto& g : objects) {
-		//	g.draw();
-		//}
-		//
-		//for (auto& t : texts) {
-		//	t.render();
-		//}
 		
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 255, 255, 255, 255);
 		SDL_RenderPresent(SDL::Context::renderer);
