@@ -96,8 +96,12 @@ struct SoundManager
 		//}
 	}
 
-	static void play(std::string sound) {
+	static void play_chunk(std::string sound) {
 		Mix_PlayChannel(-1, chunks[sound], 0);
+	}
+
+	static void play_music(std::string sound) {
+
 	}
 
 	//std::vector<> chuncks;
@@ -122,7 +126,7 @@ struct Text
 	}
 
 	void load_text() {
-		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), { 0,0,0,0 });
+		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), { 255,255,255,255 });
 		texture = SDL_CreateTextureFromSurface(SDL::Context::renderer, tmp_sur);
 		SDL_FreeSurface(tmp_sur);
 	}
@@ -243,8 +247,8 @@ struct Button
 	}
 
 	void draw() {
-		SDL_SetRenderDrawColor(SDL::Context::renderer, 0,0,0,0);
-		SDL_RenderDrawRect(SDL::Context::renderer, &rct);
+		SDL_SetRenderDrawColor(SDL::Context::renderer, 255,0,0,0);
+		SDL_RenderFillRect(SDL::Context::renderer, &rct);
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 255, 255, 255, 255);
 		text.render();
 	}
@@ -345,12 +349,6 @@ struct MenuState : State
 
 struct PlayerInputHandler : InputHandler
 {
-	PlayerInputHandler() {
-		//for (int i = 0; i < 512; i++) {
-		//	pressed[i] = false;
-		//}
-	}
-
 	void hop(GameObject& gameobject) {
 		if (!hoping) {
 			gameobject.dst.y += 2;
@@ -364,50 +362,105 @@ struct PlayerInputHandler : InputHandler
 
 	void handle_input(GameObject& gameobject) {
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
+
+		//PLAYER MOVEMENT	
 		if (kbstate[SDL_SCANCODE_RIGHT] && !pressed[SDL_SCANCODE_RIGHT]) {
-			gameobject.dst.x += 5;
-
-			hop(gameobject);
-
+			//gameobject.dst.x += 5;
+			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_NONE;
-
-			pressed[SDL_SCANCODE_RIGHT] = true;
 		}
-		if (!kbstate[SDL_SCANCODE_RIGHT]){
-			pressed[SDL_SCANCODE_RIGHT] = false;
+
+		if (kbstate[SDL_SCANCODE_LEFT]) {
+			//gameobject.dst.x -= 5;
+			//hop(gameobject);
+			gameobject.flip = SDL_FLIP_HORIZONTAL;
+		}
+
+		if (kbstate[SDL_SCANCODE_UP] && !pressed[SDL_SCANCODE_UP]) {
+			gameobject.dst.y -= 32;
+			pressed[SDL_SCANCODE_UP] = true;
+		}
+		if (!kbstate[SDL_SCANCODE_UP]) {
+			pressed[SDL_SCANCODE_UP] = false;
+		}
+
+		if (kbstate[SDL_SCANCODE_DOWN] && !pressed[SDL_SCANCODE_DOWN]) {
+			gameobject.dst.y += 32;
+			pressed[SDL_SCANCODE_DOWN] = true;
+		}
+		if (!kbstate[SDL_SCANCODE_DOWN]) {
+			pressed[SDL_SCANCODE_DOWN] = false;
 		}
 
 		if (kbstate[SDL_SCANCODE_S] && !pressed[SDL_SCANCODE_S]) {
-			SoundManager::play("wilhelm");
+			SoundManager::play_chunk("wilhelm");
 			pressed[SDL_SCANCODE_S] = true;
 		}
 		if (!kbstate[SDL_SCANCODE_S]) {
 			pressed[SDL_SCANCODE_S] = false;
-		}
-
-
-		if (kbstate[SDL_SCANCODE_LEFT]) {
-			gameobject.dst.x -= 5;
-			hop(gameobject);
-			gameobject.flip = SDL_FLIP_HORIZONTAL;
-		}
-		if (kbstate[SDL_SCANCODE_UP]) {
-			gameobject.dst.y -= 5;
-			hop(gameobject);
-		}
-		if (kbstate[SDL_SCANCODE_DOWN]) {
-			gameobject.dst.y += 5;
-			hop(gameobject);
 		}
 	}
 
 	bool hoping = false;
 };
 
-struct EnemyAI : AI {
-	EnemyAI() : v{ 4 } , vx{ v }, vy{ v } {}
+struct EnemyChaseTargetAI : AI {
+	EnemyChaseTargetAI(GameObject& target) : 
+		target{target},
+		v{ 4 }, vx{ v }, vy{ v } {}
 
-	void update(GameObject& gameobject) {
+	void update(GameObject& gameobject) override {
+		if (target.dst.x > gameobject.dst.x) {
+			vx = v;
+		}
+
+		if (target.dst.x < gameobject.dst.x) {
+			vx = -v;
+		}
+
+		if (target.dst.y > gameobject.dst.y) {
+			vy = v;
+		}
+
+
+		if (target.dst.y < gameobject.dst.y) {
+			vy = -v;
+		}
+
+		gameobject.dst.x += vx;
+		gameobject.dst.y += vy;
+	}
+
+	GameObject& target;
+	int vx, vy, v;
+};
+
+struct EnemyGoToTheGoldAI : AI {
+	EnemyGoToTheGoldAI(GameObject& target) :
+		target{ target },
+		v{ 4 }, vx{ v }, vy{ v } {}
+
+	void update(GameObject& gameobject) override {
+		if (target.dst.x > gameobject.dst.x) {
+			vx = v;
+		}
+
+		if (target.dst.x < gameobject.dst.x) {
+			vx = -v;
+		}
+
+		gameobject.dst.x += vx;
+		gameobject.dst.y += vy;
+	}
+
+	GameObject& target;
+	int vx, vy, v;
+};
+
+struct EnemyMoveRandomlyAI : AI {
+	EnemyMoveRandomlyAI() : v{ 4 } , vx{ v }, vy{ v } {}
+
+	void update(GameObject& gameobject) override {
 		gameobject.dst.x += vx;
 		gameobject.dst.y += vy;
 
@@ -431,17 +484,42 @@ struct EnemyAI : AI {
 struct PlayingState : State
 {
 	PlayingState() : 
-		player{ screen_w / 2,screen_h / 2,32,32,29,0, "player" },
-		enemy{ 0,0,32,32,31,8, "enemy" }
+		player{ 32*9,0,32,32,29,0, "player" }
 	{
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
-		enemy.set_ai(std::make_unique<EnemyAI>());
-	}
-	std::unique_ptr<State> update() override { 
-		enemy.ai->update(enemy);
+		enemy_spawn_timer.start();
 
-		return nullptr; 
+		things_to_protect.reserve(13);
+
+		int gold_y = 32;
+		int gold_x = 32*9;
+		for (int i = 0; i < 13; i++) {
+			things_to_protect.emplace_back(gold_x, gold_y, 32, 32, 41, 4, "gold");
+			gold_y += 32;
+		}
+
+		enemies.reserve(50);
 	}
+	
+	void add_enemy(int x, int y) {
+		auto& e = enemies.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
+		e.set_ai(std::make_unique<EnemyGoToTheGoldAI>(things_to_protect[0]));
+	}
+	
+	std::unique_ptr<State> update() override { 
+		for (auto& e : enemies) {
+			e.ai->update(e);
+		}
+
+		if (enemy_spawn_timer.getTicks() > 3000) {
+			add_enemy(0,random_between(0,15)*32);
+			enemy_spawn_timer.stop();
+			enemy_spawn_timer.start();
+		}
+
+		return nullptr;
+	}
+
 	std::unique_ptr<State> handle_input() override {
 		player.input_handler->handle_input(player);
 
@@ -454,12 +532,18 @@ struct PlayingState : State
 	}
 	void draw() override {
 		player.draw();
-		enemy.draw();
+		for (auto& e : enemies) {
+			e.draw();
+		}
+		for (auto& t : things_to_protect) {
+			t.draw();
+		}
 	}
 
 	GameObject player;
-	GameObject enemy;
-
+	std::vector<GameObject> enemies;
+	std::vector<GameObject> things_to_protect;
+	Timer enemy_spawn_timer;
 	//physics physics
 
 };
@@ -525,10 +609,7 @@ int main(int argc, char* args[])
 	float fps = (1.0f / 24.0f)*1000.0f;
 
 	std::vector<GameObject> objects;
-	std::vector<Text> texts;
-
-	texts.reserve(50);
-
+	
 	bool clicked = false;
 
 	Game game;
@@ -562,13 +643,6 @@ int main(int argc, char* args[])
 			}
 			if (SDL::Context::event.type == SDL_MOUSEBUTTONDOWN) {
 				if (!clicked) {
-					//objects.emplace_back(rand() % screen_w, rand() % screen_h, 32, 32, rand() % 47, rand() % 21);
-					if (texts.size() < 20) {
-						texts.emplace_back("Desturoy", rand() % screen_w, rand() % screen_h, 25);
-					}
-					else {
-						std::cout << "limit reached\n";
-					}
 					clicked = true;
 				}
 			}
@@ -596,7 +670,7 @@ int main(int argc, char* args[])
 		game.update();
 		game.draw();
 		
-		SDL_SetRenderDrawColor(SDL::Context::renderer, 255, 255, 255, 255);
+		SDL_SetRenderDrawColor(SDL::Context::renderer, 25, 25, 25, 255);
 		SDL_RenderPresent(SDL::Context::renderer);
 
 
