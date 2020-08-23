@@ -234,6 +234,7 @@ struct GameObject
 	std::unique_ptr<InputHandler> input_handler{ nullptr };
 	std::unique_ptr<AI> ai{ nullptr };
 	std::unique_ptr<Animation> animation{ nullptr };
+	//updater()??
 };
 
 struct Button
@@ -365,15 +366,23 @@ struct PlayerInputHandler : InputHandler
 
 		//PLAYER MOVEMENT	
 		if (kbstate[SDL_SCANCODE_RIGHT] && !pressed[SDL_SCANCODE_RIGHT]) {
-			//gameobject.dst.x += 5;
+			gameobject.dst.x += 32;
 			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_NONE;
+			pressed[SDL_SCANCODE_RIGHT] = true;
+		}
+		if (!kbstate[SDL_SCANCODE_RIGHT]) {
+			pressed[SDL_SCANCODE_RIGHT] = false;
 		}
 
-		if (kbstate[SDL_SCANCODE_LEFT]) {
-			//gameobject.dst.x -= 5;
+		if (kbstate[SDL_SCANCODE_LEFT] && !pressed[SDL_SCANCODE_LEFT]) {
+			gameobject.dst.x -= 32;
 			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_HORIZONTAL;
+			pressed[SDL_SCANCODE_LEFT] = true;
+		}
+		if (!kbstate[SDL_SCANCODE_LEFT]) {
+			pressed[SDL_SCANCODE_LEFT] = false;
 		}
 
 		if (kbstate[SDL_SCANCODE_UP] && !pressed[SDL_SCANCODE_UP]) {
@@ -399,9 +408,19 @@ struct PlayerInputHandler : InputHandler
 		if (!kbstate[SDL_SCANCODE_S]) {
 			pressed[SDL_SCANCODE_S] = false;
 		}
+
+		if (kbstate[SDL_SCANCODE_Z] && !pressed[SDL_SCANCODE_Z]) {
+			//SoundManager::play_chunk("wilhelm");
+			pressed[SDL_SCANCODE_Z] = true;
+			shooting = true;
+		}
+		if (!kbstate[SDL_SCANCODE_Z]) {
+			pressed[SDL_SCANCODE_Z] = false;
+		}
 	}
 
 	bool hoping = false;
+	bool shooting = false;
 };
 
 struct EnemyChaseTargetAI : AI {
@@ -481,6 +500,51 @@ struct EnemyMoveRandomlyAI : AI {
 	int v, vx, vy;
 };
 
+struct NormalBulletAI : AI {
+	NormalBulletAI(GameObject& player) :
+		v{10},
+		player{ player }
+	{}
+
+	void update(GameObject& gameobject) override {
+		/*
+		
+		Acá para hacer esto
+		if(player.input_handler->shooting)
+
+		me falta una capaz mas de abstraccion
+		porque las struct input_handler deberia ser una 
+		interfaz mas generica, de ahi tendria que heredar una
+		player_input_handler que tendria la propiedad shooting
+		y a su vez de gameobject tendria que heredar un player
+		que tenga como propiedad una player_input_handler (creo)
+
+		*/
+
+		if(player.flip == SDL_FLIP_NONE){
+			gameobject.dst.x -= v;
+		}
+		else {
+			gameobject.dst.x += v;
+		}
+	}
+
+	int v;
+	GameObject& player;
+};
+
+struct NormalBombUpdateAI : AI {
+	NormalBombUpdateAI() {
+		timer.start();
+	}
+
+	void update(GameObject& gameobject) override {
+
+	}
+
+	Timer timer;
+};
+
 struct PlayingState : State
 {
 	PlayingState() : 
@@ -499,6 +563,8 @@ struct PlayingState : State
 		}
 
 		enemies.reserve(50);
+		bullets.reserve(100);
+		bombs.reserve(100);
 	}
 	
 	void add_enemy(int x, int y) {
@@ -509,6 +575,10 @@ struct PlayingState : State
 	std::unique_ptr<State> update() override { 
 		for (auto& e : enemies) {
 			e.ai->update(e);
+		}
+
+		for (auto& b : bullets) {
+			b.ai->update(b);
 		}
 
 		if (enemy_spawn_timer.getTicks() > 3000) {
@@ -522,6 +592,15 @@ struct PlayingState : State
 
 	std::unique_ptr<State> handle_input() override {
 		player.input_handler->handle_input(player);
+
+		//my senses say that this is not okay
+		PlayerInputHandler* pih = (PlayerInputHandler*)player.input_handler.get();
+		if(pih->shooting){
+			auto& b = bullets.emplace_back(player.dst.x, player.dst.y, 32, 32, 35, 6, "bullet");
+			b.set_ai(std::make_unique<NormalBulletAI>(player));
+
+			pih->shooting = false;
+		}
 
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
 		if (kbstate[SDL_SCANCODE_ESCAPE]) {
@@ -538,11 +617,19 @@ struct PlayingState : State
 		for (auto& t : things_to_protect) {
 			t.draw();
 		}
+		for (auto& b : bullets) {
+			b.draw();
+		}
+		for (auto& b : bombs) {
+			b.draw();
+		}
 	}
 
 	GameObject player;
 	std::vector<GameObject> enemies;
 	std::vector<GameObject> things_to_protect;
+	std::vector<GameObject> bombs;
+	std::vector<GameObject> bullets;
 	Timer enemy_spawn_timer;
 	//physics physics
 
