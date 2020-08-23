@@ -504,7 +504,9 @@ struct NormalBulletAI : AI {
 	NormalBulletAI(GameObject& player) :
 		v{10},
 		player{ player }
-	{}
+	{
+		orientation = player.flip;
+	}
 
 	void update(GameObject& gameobject) override {
 		/*
@@ -521,16 +523,17 @@ struct NormalBulletAI : AI {
 
 		*/
 
-		if(player.flip == SDL_FLIP_NONE){
-			gameobject.dst.x -= v;
+		if(orientation == SDL_FLIP_NONE){
+			gameobject.dst.x += v;
 		}
 		else {
-			gameobject.dst.x += v;
+			gameobject.dst.x -= v;
 		}
 	}
 
 	int v;
 	GameObject& player;
+	SDL_RendererFlip orientation;
 };
 
 struct NormalBombUpdateAI : AI {
