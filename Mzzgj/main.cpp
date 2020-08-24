@@ -206,7 +206,7 @@ struct GameObject
 {
 	GameObject(int x, int y, int w, int h, int tilex, int tiley, std::string tag) :
 		tile{ tile }, dst{ x,y,w,h }, src{ tilex * 16,tiley * 16,16,16 },
-		angle{ 0.0 }, flip{ SDL_FLIP_NONE }, tag{tag}{
+		angle{ 0.0 }, flip{ SDL_FLIP_NONE }, tag{ tag }, active{true}{
 	}
 
 	void draw() {
@@ -230,11 +230,13 @@ struct GameObject
 	SDL_RendererFlip flip;
 	SDL_Rect dst, src;
 	std::string tag;
+	bool active;
 
 	std::unique_ptr<InputHandler> input_handler{ nullptr };
 	std::unique_ptr<AI> ai{ nullptr };
 	std::unique_ptr<Animation> animation{ nullptr };
 	//updater()??
+
 };
 
 struct Button
@@ -548,6 +550,45 @@ struct NormalBombUpdateAI : AI {
 	Timer timer;
 };
 
+struct Physics
+{
+	bool Collision(GameObject& a, GameObject& b) {
+		if (a.dst.x < b.dst.x + b.dst.w &&
+			a.dst.x + a.dst.w > b.dst.x &&
+			a.dst.y < b.dst.y + b.dst.h &&
+			a.dst.y + a.dst.h > b.dst.y)
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	GameObject* Collision(std::vector<GameObject>& group, GameObject& obj) {
+		for (auto& g : group) {
+			if (Collision(g, obj)) {
+				return &g;
+			}
+		}
+		
+		return nullptr;
+	}
+
+	bool Collision(std::vector<GameObject>& group1, std::vector<GameObject>& group2) {
+		for (auto& g1 : group1) {
+			for (auto& g2 : group2) {
+				if (Collision(g1, g2)) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+
+};
+
 struct PlayingState : State
 {
 	PlayingState() : 
@@ -568,6 +609,8 @@ struct PlayingState : State
 		enemies.reserve(50);
 		bullets.reserve(100);
 		bombs.reserve(100);
+
+
 	}
 	
 	void add_enemy(int x, int y) {
@@ -576,12 +619,28 @@ struct PlayingState : State
 	}
 	
 	std::unique_ptr<State> update() override { 
-		for (auto& e : enemies) {
-			e.ai->update(e);
-		}
-
+		std::vector<GameObject>::iterator bullets_it = bullets.begin();
 		for (auto& b : bullets) {
-			b.ai->update(b);
+			if (b.ai) b.ai->update(b);
+			if (!b.active) {
+				bullets.erase(bullets_it);
+			}
+			bullets_it++;
+		}
+		
+		std::vector<GameObject>::iterator enemies_it = enemies.begin();
+		for (auto& e : enemies) {
+			if(e.ai) e.ai->update(e);
+			GameObject* obj = physics.Collision(bullets, e);
+			if (obj) {
+				obj->active = false;
+				e.active = false;
+			}
+
+			if (!e.active) {
+				enemies.erase(enemies_it);
+			}
+			enemies_it++;
 		}
 
 		if (enemy_spawn_timer.getTicks() > 3000) {
@@ -615,16 +674,16 @@ struct PlayingState : State
 	void draw() override {
 		player.draw();
 		for (auto& e : enemies) {
-			e.draw();
+			if(e.active) e.draw();
 		}
 		for (auto& t : things_to_protect) {
-			t.draw();
+			if(t.active) t.draw();
 		}
 		for (auto& b : bullets) {
-			b.draw();
+			if(b.active) b.draw();
 		}
 		for (auto& b : bombs) {
-			b.draw();
+			if(b.active) b.draw();
 		}
 	}
 
@@ -634,7 +693,7 @@ struct PlayingState : State
 	std::vector<GameObject> bombs;
 	std::vector<GameObject> bullets;
 	Timer enemy_spawn_timer;
-	//physics physics
+	Physics physics;
 
 };
 
@@ -665,7 +724,6 @@ struct Game
 			state = std::move(new_state);
 		}
 
-		//state = std::move(state->update());
 		return true;
 	}
 	
@@ -675,7 +733,6 @@ struct Game
 			state = std::move(new_state);
 		}
 		
-		//state = std::move(state->handle_input());
 		return true;
 	}
 
