@@ -80,14 +80,21 @@ struct SoundManager
 	SoundManager() {
 		//chuncks.reserve(10);
 
-		auto load_audio = [](std::string file_path){
+		load("wilhelm", "wilhelm.wav");
+		load("guitarintro", "guitarintro.wav");
+		load("sword", "sword.wav");
+
+		//chuncks.push_back(m);
+	}
+
+	void load(std::string name, std::string path) {
+		auto load_audio = [](std::string file_path) {
 			Mix_Chunk* m = Mix_LoadWAV(file_path.c_str());
 			if (!m) std::cout << "erro loading audio\n";
 			return m;
 		};
 
-		chunks["wilhelm"] = load_audio("wilhelm.wav");
-		//chuncks.push_back(m);
+		chunks[name] = load_audio(path);
 	}
 
 	~SoundManager() {
@@ -112,12 +119,20 @@ struct SoundManager
 
 struct Text
 {
-	Text(std::string text, int x, int y, int w, int h) : text{ text }, rct{ x,y,w,h } {
+	Text(std::string text, int x, int y, int w, int h) : text{ text }, rct{ x,y,w,h }, color{ 255,255,255,255 } {
 		load_text();
 	}
 
-	Text(std::string text, int x, int y, int h) : text{ text } {
+	Text(std::string text, int x, int y, int w, int h, SDL_Color color) : text{ text }, rct{ x,y,w,h }, color{ color } {
+		load_text();
+	}
+
+	Text(std::string text, int x, int y, int h) : text{ text }, color{ 255,255,255,255 }{
 		load_text_and_rct(x,y,h);
+	}
+
+	Text(std::string text, int x, int y, int h, SDL_Color color) : text{ text }, color{ color }{
+		load_text_and_rct(x, y, h);
 	}
 
 	~Text() {
@@ -126,13 +141,13 @@ struct Text
 	}
 
 	void load_text() {
-		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), { 255,255,255,255 });
+		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), color);
 		texture = SDL_CreateTextureFromSurface(SDL::Context::renderer, tmp_sur);
 		SDL_FreeSurface(tmp_sur);
 	}
 
 	void load_text_and_rct(int x, int y,int h) {
-		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), { 0,0,0,0 });
+		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), color);
 		texture = SDL_CreateTextureFromSurface(SDL::Context::renderer, tmp_sur);
 
 		rct.x = x;
@@ -156,6 +171,8 @@ struct Text
 	std::string text;
 	SDL_Texture* texture;
 	SDL_Rect rct;
+
+	SDL_Color color;
 };
 
 namespace Assets {
@@ -172,13 +189,11 @@ namespace Assets {
 	};
 }
 
-
 SDL_Renderer* SDL::Context::renderer = NULL;
 SDL_Event SDL::Context::event;
 SDL_Texture* Assets::Sheet::texture = NULL;
 TTF_Font* SDL::Context::font = NULL;
 std::unordered_map<std::string, Mix_Chunk*> SoundManager::chunks;
-
 
 struct GameObject;
 
@@ -412,7 +427,7 @@ struct PlayerInputHandler : InputHandler
 		}
 
 		if (kbstate[SDL_SCANCODE_Z] && !pressed[SDL_SCANCODE_Z]) {
-			//SoundManager::play_chunk("wilhelm");
+			SoundManager::play_chunk("sword");
 			pressed[SDL_SCANCODE_Z] = true;
 			shooting = true;
 		}
@@ -459,7 +474,7 @@ struct EnemyChaseTargetAI : AI {
 struct EnemyGoToTheGoldAI : AI {
 	EnemyGoToTheGoldAI(GameObject& target) :
 		target{ target },
-		v{ 4 }, vx{ v }, vy{ v } {}
+		v{ 4 }, vx{ v }, vy{ 0 } {}
 
 	void update(GameObject& gameobject) override {
 		if (target.dst.x > gameobject.dst.x) {
@@ -564,6 +579,15 @@ struct Physics
 		return false;
 	}
 
+	bool check_boundaries(GameObject& a) {
+		if (a.dst.x < 0 || a.dst.x + a.dst.w > screen_w ||
+			a.dst.x < 0 || a.dst.x + a.dst.w > screen_w) {
+			return true;
+		}
+
+		return false;
+	}
+
 	GameObject* Collision(std::vector<GameObject>& group, GameObject& obj) {
 		for (auto& g : group) {
 			if (Collision(g, obj)) {
@@ -622,11 +646,19 @@ struct PlayingState : State
 		std::vector<GameObject>::iterator bullets_it = bullets.begin();
 		for (auto& b : bullets) {
 			if (b.ai) b.ai->update(b);
+			
+			if (physics.check_boundaries(b)) {
+				b.active = false;
+			}
+			
 			if (!b.active) {
 				bullets.erase(bullets_it);
 			}
 			bullets_it++;
+
+		
 		}
+
 		
 		std::vector<GameObject>::iterator enemies_it = enemies.begin();
 		for (auto& e : enemies) {
@@ -634,6 +666,12 @@ struct PlayingState : State
 			GameObject* obj = physics.Collision(bullets, e);
 			if (obj) {
 				obj->active = false;
+				e.active = false;
+			}
+
+			GameObject* protectable = physics.Collision(things_to_protect, e);
+			if (protectable) {
+				protectable->active = false;
 				e.active = false;
 			}
 
@@ -697,12 +735,45 @@ struct PlayingState : State
 
 };
 
+struct IntroState : State
+{
+	IntroState() : intro{ "INTRO", screen_w / 2, screen_h / 2, 100, 50, {255,125,0,0} }
+	{
+		timer.start();
+		SoundManager::play_chunk("guitarintro");
+	}
+
+	std::unique_ptr<State> update() override {
+		if (timer.getTicks() >= 1000 * 10) {
+			timer.stop();
+			return std::make_unique<PlayingState>();
+		}
+
+		return nullptr;
+	}
+
+	std::unique_ptr<State> handle_input() override {
+		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
+		if (kbstate[SDL_SCANCODE_SPACE]) {
+			timer.stop();
+			return std::make_unique<PlayingState>();
+		}
+	}
+
+	void draw() override {
+		intro.render();
+	}
+
+	Text intro;
+	Timer timer;
+};
+
 std::unique_ptr<State> MenuState::handle_input(){
 	switch (menu.handle_input()) {
 	case 0:
 		return nullptr;
 	case 1:
-		return std::make_unique<PlayingState>();
+		return std::make_unique<IntroState>();
 	case 2:
 		return std::make_unique<PlayingState>();
 	case 3:
