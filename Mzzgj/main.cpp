@@ -11,6 +11,7 @@
 
 #include <unordered_map>
 #include "timer.h"
+#include "vector2.h"
 
 #define KEYPRESS(X)	(X.type == SDL_KEYDOWN)
 #define KEYUNPRESS(X) (X.type == SDL_KEYUP)
@@ -82,6 +83,7 @@ struct SoundManager
 
 		load("wilhelm", "wilhelm.wav");
 		load("guitarintro", "guitarintro.wav");
+		load("hipintro", "hipintro.wav");
 		load("sword", "sword.wav");
 
 		//chuncks.push_back(m);
@@ -90,7 +92,7 @@ struct SoundManager
 	void load(std::string name, std::string path) {
 		auto load_audio = [](std::string file_path) {
 			Mix_Chunk* m = Mix_LoadWAV(file_path.c_str());
-			if (!m) std::cout << "erro loading audio\n";
+			if (!m) std::cout << "error loading audio "  << file_path << "\n";
 			return m;
 		};
 
@@ -105,6 +107,18 @@ struct SoundManager
 
 	static void play_chunk(std::string sound) {
 		Mix_PlayChannel(-1, chunks[sound], 0);
+	}
+
+	static int play_loop_chunk(std::string sound) {
+		return Mix_PlayChannel(-1, chunks[sound], -1);
+	}
+
+	static void shut_up_channel(int channel) {
+		Mix_HaltChannel(channel);
+	}
+
+	static void play_for_seconds(std::string sound, int ms) {
+		Mix_PlayChannelTimed(-1, chunks[sound], -1, ms);
 	}
 
 	static void play_music(std::string sound) {
@@ -542,10 +556,14 @@ struct NormalBulletAI : AI {
 
 		if(orientation == SDL_FLIP_NONE){
 			gameobject.dst.x += v;
+			gameobject.angle += 3;
 		}
 		else {
 			gameobject.dst.x -= v;
+			gameobject.angle -= 3;
 		}
+
+
 	}
 
 	int v;
@@ -612,6 +630,97 @@ struct Physics
 
 
 };
+
+///////////////
+//particles////
+///////////////
+
+struct Particle
+{
+public:
+	Particle() {
+		life.start();
+		active = true;
+		gravity = Vector2(0.0f, 0.0f);
+		speed = Vector2(0.0f, 0.0f);
+		velocity = Vector2(0.0f, 0.0f);
+		color = { 255,0,0,255 };
+		lifetime = 2000; //ms
+		fade = true;
+		color_mod = false;
+	}
+
+	Particle(int x, int y, int w, int h, float gy, float wx) : Particle() {
+		rct.x = x;
+		rct.y = y;
+		rct.w = w;
+		rct.h = h;
+
+		gravity.y = gy;
+		wind.x = wx;
+	}
+
+	Particle(int x, int y, int w, int h, float gy, float wx, SDL_Color color) : Particle() {
+		rct.x = x;
+		rct.y = y;
+		rct.w = w;
+		rct.h = h;
+
+		gravity.y = gy;
+		wind.x = wx;
+
+		this->color = color;
+	}
+
+	///add textured particle option
+
+	void update() {
+		time_left = lifetime - life.getTicks();
+		if (time_left <= 0) {
+			active = false;
+			life.stop();
+		}
+
+		if (active) {
+			if (fade) color.a = (255 * time_left) / lifetime;
+			if (color_mod) {
+				color.g = (((255 - 130) * time_left) / lifetime) + 130;
+			}
+			speed += gravity;
+			speed += wind;
+			speed += velocity;
+
+			if (rct.x >= 500 || rct.x <= 0) { speed.x = 0; }
+			if (rct.y >= 400 || rct.y <= 0) { speed.y = 0; }
+
+			rct.x += speed.x;
+			rct.y += speed.y;
+		}
+	}
+
+	void draw(SDL_Renderer* renderer) {
+		SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+		SDL_RenderFillRect(renderer, &rct);
+	}
+
+	void set_color(Uint8 r, Uint8 g, Uint8 b) {
+		color.r = r;
+		color.g = g;
+		color.b = b;
+	}
+
+	SDL_Rect rct;
+	Vector2 velocity, speed, gravity, wind;
+	float mass;
+	Uint32 lifetime;
+	int time_left;
+	Timer life;
+	bool active, fade, color_mod;
+
+	SDL_Color color;
+};
+
+
 
 struct PlayingState : State
 {
@@ -740,11 +849,12 @@ struct IntroState : State
 	IntroState() : intro{ "INTRO", screen_w / 2, screen_h / 2, 100, 50, {255,125,0,0} }
 	{
 		timer.start();
-		SoundManager::play_chunk("guitarintro");
+		limit = 1000 * 10;
+		SoundManager::play_for_seconds("hipintro", limit);
 	}
 
 	std::unique_ptr<State> update() override {
-		if (timer.getTicks() >= 1000 * 10) {
+		if (timer.getTicks() >= limit) {
 			timer.stop();
 			return std::make_unique<PlayingState>();
 		}
@@ -766,6 +876,7 @@ struct IntroState : State
 
 	Text intro;
 	Timer timer;
+	int limit;
 };
 
 std::unique_ptr<State> MenuState::handle_input(){
