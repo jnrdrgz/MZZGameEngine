@@ -1,3 +1,4 @@
+
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <SDL_image.h>
@@ -8,6 +9,8 @@
 #include <sstream>
 #include <iostream>
 #include <random>
+
+
 
 #include <unordered_map>
 #include "timer.h"
@@ -100,9 +103,9 @@ struct SoundManager
 	}
 
 	~SoundManager() {
-		//for (auto c : chuncks) {
-		//	Mix_FreeChunk(c);
-		//}
+		for (auto c : chunks) {
+			Mix_FreeChunk(c.second);
+		}
 	}
 
 	static void play_chunk(std::string sound) {
@@ -129,6 +132,11 @@ struct SoundManager
 
 	static std::unordered_map<std::string, Mix_Chunk*> chunks;
 };
+
+
+///////////////
+//particles////
+///////////////
 
 
 struct Text
@@ -209,6 +217,217 @@ SDL_Texture* Assets::Sheet::texture = NULL;
 TTF_Font* SDL::Context::font = NULL;
 std::unordered_map<std::string, Mix_Chunk*> SoundManager::chunks;
 
+
+namespace ParticleManager
+{
+	////////////////////
+	/*
+		DELETE PARTICLES WITH AN ITERATOR LIKE IN PHYSICS
+	*/
+	////////////////////
+	struct Particle
+	{
+	public:
+		Particle() {
+			life.start();
+			active = true;
+			gravity = Vector2(0.0f, 0.0f);
+			speed = Vector2(0.0f, 0.0f);
+			velocity = Vector2(0.0f, 0.0f);
+			color = { 255,0,0,255 };
+			lifetime = 2000; //ms
+			fade = true;
+			color_mod = false;
+			textured = false;
+		}
+
+		Particle(int x, int y, int w, int h, float gy, float wx) : Particle() {
+			rct.x = x;
+			rct.y = y;
+			rct.w = w;
+			rct.h = h;
+
+			gravity.y = gy;
+			wind.x = wx;
+		}
+
+		Particle(int x, int y, int w, int h, float gy, float wx, SDL_Color color) : Particle() {
+			rct.x = x;
+			rct.y = y;
+			rct.w = w;
+			rct.h = h;
+
+			gravity.y = gy;
+			wind.x = wx;
+
+			this->color = color;
+		}
+
+		///textured particle
+		Particle(int x, int y, int w, int h, Vector2 gy, Vector2 wn, int tilex, int tiley)
+			: rct{ x,y,w,h },
+			src{ tilex * 16,tiley * 16, 16,16 },
+			gravity{ gy }, wind{ wn }, textured{ true }, active{true} {
+
+			life.start();
+			lifetime = 2000; 
+			
+		}
+
+
+		void update() {
+			time_left = lifetime - life.getTicks();
+			if (time_left <= 0) {
+				active = false;
+				life.stop();
+			}
+
+			if (active) {
+				if (fade) color.a = (255 * time_left) / lifetime;
+				if (color_mod) {
+					color.g = (((255 - 130) * time_left) / lifetime) + 130;
+				}
+				speed += gravity;
+				speed += wind;
+				speed += velocity;
+
+				if (rct.x >= 500 || rct.x <= 0) { speed.x = 0; }
+				if (rct.y >= 400 || rct.y <= 0) { speed.y = 0; }
+
+				rct.x += speed.x;
+				rct.y += speed.y;
+			}
+		}
+
+		void draw() {
+			if (textured) {
+				//pass angle
+				SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &rct, 0, NULL, SDL_FLIP_NONE);
+			}
+			else {
+				SDL_SetRenderDrawColor(SDL::Context::renderer, color.r, color.g, color.b, color.a);
+				SDL_RenderFillRect(SDL::Context::renderer, &rct);
+			}
+		}
+
+		void set_color(Uint8 r, Uint8 g, Uint8 b) {
+			color.r = r;
+			color.g = g;
+			color.b = b;
+		}
+
+		SDL_Rect rct, src;
+		Vector2 velocity, speed, gravity, wind;
+		float mass;
+		Uint32 lifetime;
+		int time_left;
+		Timer life;
+		bool active, fade, color_mod, textured;
+
+		SDL_Color color;
+	};
+
+	struct Emitter
+	{
+	public:
+		Emitter() {
+			particles.reserve(1000);
+		}
+		Emitter(Vector2 position) {
+			this->position.x = position.x;
+			this->position.y = position.y;
+			particles.reserve(1000);
+			emitting = false;
+		}
+
+		void push_particle(int x, int y) {
+			int d = random_between(5, 15);
+			//Particle p(x, y, d, d, random_betweenf(-0.5f, -0.1f), random_betweenf(-0.1f, 0.04f));
+			//p.set_color(255, 255, 0);
+			//particles.push_back(p);
+			particles.emplace_back(x, y, d, d, random_betweenf(-0.5f, -0.1f), random_betweenf(-0.1f, 0.04f));
+		}
+
+		void push_particle() {
+			int d = random_between(5, 15);
+			//Particle p(position.x, position.y, d, d, random_betweenf(-0.5f, -0.1f), random_betweenf(-0.1f, 0.04f));
+			//p.set_color(255, 255, 0);
+			//particles.push_back(p);
+			particles.emplace_back(position.x, position.y, d, d, random_betweenf(-0.5f, -0.1f), random_betweenf(-0.1f, 0.04f));
+		}
+
+		void push_particle(int d, SDL_Color color, bool color_mode = false) {
+			//Particle p(position.x, position.y, d, d, particles_g, particles_w);
+			//p.set_color(color.r, color.g, color.b);
+			//particles.push_back(p);
+			//particles.emplace_back(position.x, position.y, d, d, particles_g, particles_w, color);
+		}
+
+		void push_particle(int x, int y, int w, int h, Vector2 gvt, Vector2 wnd, int tx, int ty) {
+			particles.emplace_back(x, y, w, h, gvt, wnd, tx, ty);
+		}
+
+		void emit(int x, int y, int w, int h, Vector2 gvt, Vector2 wnd, int tx, int ty, Uint32 ms) {
+			lifetime = ms;
+			time.start();
+			emitting = true;
+
+			position.x = (float)x;
+			position.y = (float)y;
+
+			this->w = w;
+			this->h = h;
+			this->tx = tx;
+			this->ty = ty;
+			gravity = gvt;
+			wind = wnd;
+		}
+
+		void update() {
+			if (emitting) {
+				wind.x = random_betweenf(-0.4f, 0.4f);
+				wind.y = random_betweenf(-0.2f, 0.0f);
+				push_particle((int)position.x, (int)position.y, w, h, gravity, wind, tx, ty);
+				if (time.getTicks() >= lifetime) {
+					time.stop();
+					emitting = false;
+				}
+			}
+
+			std::vector<Particle>::iterator it = particles.begin();
+			for (auto& particle : particles) {
+				particle.update();
+
+				if (!particle.active) {
+					particles.erase(it);
+					std::cout << "erased particle\n";
+				}
+				it++;
+			}
+		}
+
+		void draw() {
+			for (auto& particle : particles) {
+				particle.draw();
+			}
+		}
+
+		Vector2 position;
+		Vector2 velocity, speed, gravity, wind;
+		int w, h;
+		int tx, ty;
+
+		Uint32 lifetime;
+		SDL_Color color;
+		std::vector<Particle> particles;
+		Timer time;
+		bool emitting;
+	};
+}
+
+
+
+
 struct GameObject;
 
 struct InputHandler
@@ -230,6 +449,23 @@ struct Animation
 	Timer timer;
 };
 
+struct ParticleEmitter
+{
+	ParticleEmitter(GameObject& gameobject) : gameobject{ gameobject } {
+
+	}
+	virtual void update() = 0;
+	virtual void emit() = 0;
+	virtual void draw() = 0;
+
+	Timer timer;
+	////////////////no esta hecho emitter todavia
+	ParticleManager::Emitter emitter;
+	GameObject& gameobject;
+};
+
+
+
 //22 hor
 struct GameObject
 {
@@ -239,7 +475,8 @@ struct GameObject
 	}
 
 	void draw() {
-		SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, flip);
+		if (active) SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, flip);
+		if(emitter) emitter->draw();
 	}
 	
 	void set_input_handler(std::unique_ptr<InputHandler> ptr) {
@@ -254,6 +491,10 @@ struct GameObject
 		animation = std::move(ptr);
 	}
 
+	void set_emitter(std::unique_ptr<ParticleEmitter> ptr) {
+		emitter = std::move(ptr);
+	}
+
 	int tile;
 	double angle;
 	SDL_RendererFlip flip;
@@ -264,6 +505,7 @@ struct GameObject
 	std::unique_ptr<InputHandler> input_handler{ nullptr };
 	std::unique_ptr<AI> ai{ nullptr };
 	std::unique_ptr<Animation> animation{ nullptr };
+	std::unique_ptr<ParticleEmitter> emitter{ nullptr };
 	//updater()??
 
 };
@@ -454,6 +696,11 @@ struct PlayerInputHandler : InputHandler
 	bool shooting = false;
 };
 
+
+// ////////////////////////////////
+////////////////////AIs////////////
+// ////////////////////////////////
+
 struct EnemyChaseTargetAI : AI {
 	EnemyChaseTargetAI(GameObject& target) : 
 		target{target},
@@ -631,96 +878,28 @@ struct Physics
 
 };
 
-///////////////
-//particles////
-///////////////
+///////////////////////////
+/// EMITTERs//////////////
+/// ////////////////////////
 
-struct Particle
+struct EnemyDeathEmitter : ParticleEmitter
 {
-public:
-	Particle() {
-		life.start();
-		active = true;
-		gravity = Vector2(0.0f, 0.0f);
-		speed = Vector2(0.0f, 0.0f);
-		velocity = Vector2(0.0f, 0.0f);
-		color = { 255,0,0,255 };
-		lifetime = 2000; //ms
-		fade = true;
-		color_mod = false;
+	EnemyDeathEmitter(GameObject& gameobject) : ParticleEmitter{ gameobject } {
+
 	}
 
-	Particle(int x, int y, int w, int h, float gy, float wx) : Particle() {
-		rct.x = x;
-		rct.y = y;
-		rct.w = w;
-		rct.h = h;
-
-		gravity.y = gy;
-		wind.x = wx;
+	void update() override {
+		emitter.update();
 	}
 
-	Particle(int x, int y, int w, int h, float gy, float wx, SDL_Color color) : Particle() {
-		rct.x = x;
-		rct.y = y;
-		rct.w = w;
-		rct.h = h;
-
-		gravity.y = gy;
-		wind.x = wx;
-
-		this->color = color;
+	void emit() override {
+		emitter.emit(gameobject.dst.x, gameobject.dst.y, 10, 10, Vector2(0.0f, 0.3f), Vector2(0.0f, 0.0f), 32, 12, 2000);
 	}
 
-	///add textured particle option
-
-	void update() {
-		time_left = lifetime - life.getTicks();
-		if (time_left <= 0) {
-			active = false;
-			life.stop();
-		}
-
-		if (active) {
-			if (fade) color.a = (255 * time_left) / lifetime;
-			if (color_mod) {
-				color.g = (((255 - 130) * time_left) / lifetime) + 130;
-			}
-			speed += gravity;
-			speed += wind;
-			speed += velocity;
-
-			if (rct.x >= 500 || rct.x <= 0) { speed.x = 0; }
-			if (rct.y >= 400 || rct.y <= 0) { speed.y = 0; }
-
-			rct.x += speed.x;
-			rct.y += speed.y;
-		}
+	void draw() override {
+		emitter.draw();
 	}
-
-	void draw(SDL_Renderer* renderer) {
-		SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-		SDL_RenderFillRect(renderer, &rct);
-	}
-
-	void set_color(Uint8 r, Uint8 g, Uint8 b) {
-		color.r = r;
-		color.g = g;
-		color.b = b;
-	}
-
-	SDL_Rect rct;
-	Vector2 velocity, speed, gravity, wind;
-	float mass;
-	Uint32 lifetime;
-	int time_left;
-	Timer life;
-	bool active, fade, color_mod;
-
-	SDL_Color color;
 };
-
-
 
 struct PlayingState : State
 {
@@ -743,12 +922,12 @@ struct PlayingState : State
 		bullets.reserve(100);
 		bombs.reserve(100);
 
-
 	}
 	
 	void add_enemy(int x, int y) {
 		auto& e = enemies.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
 		e.set_ai(std::make_unique<EnemyGoToTheGoldAI>(things_to_protect[0]));
+		e.set_emitter(std::make_unique<EnemyDeathEmitter>(e));
 	}
 	
 	std::unique_ptr<State> update() override { 
@@ -764,18 +943,18 @@ struct PlayingState : State
 				bullets.erase(bullets_it);
 			}
 			bullets_it++;
-
-		
 		}
-
 		
 		std::vector<GameObject>::iterator enemies_it = enemies.begin();
 		for (auto& e : enemies) {
 			if(e.ai) e.ai->update(e);
+			if(e.emitter) e.emitter->update();
+
 			GameObject* obj = physics.Collision(bullets, e);
 			if (obj) {
 				obj->active = false;
 				e.active = false;
+				if(e.emitter) e.emitter->emit();
 			}
 
 			GameObject* protectable = physics.Collision(things_to_protect, e);
@@ -821,16 +1000,16 @@ struct PlayingState : State
 	void draw() override {
 		player.draw();
 		for (auto& e : enemies) {
-			if(e.active) e.draw();
+			e.draw();
 		}
 		for (auto& t : things_to_protect) {
-			if(t.active) t.draw();
+			t.draw();
 		}
 		for (auto& b : bullets) {
-			if(b.active) b.draw();
+			b.draw();
 		}
 		for (auto& b : bombs) {
-			if(b.active) b.draw();
+			b.draw();
 		}
 	}
 
@@ -944,6 +1123,9 @@ int main(int argc, char* args[])
 	Game game;
 	SoundManager sound; // a donde meto esto, no static?
 
+	GameObject g(250,250,64,64,10,10,"tag");
+	EnemyDeathEmitter emiter(g);
+
 	while (running) {
 
 		SDL_RenderClear(SDL::Context::renderer);
@@ -972,8 +1154,10 @@ int main(int argc, char* args[])
 			}
 			if (SDL::Context::event.type == SDL_MOUSEBUTTONDOWN) {
 				if (!clicked) {
+					
 					clicked = true;
 				}
+				emiter.emit();
 			}
 			if (SDL::Context::event.type == SDL_MOUSEBUTTONUP) {
 				if (clicked) {
@@ -998,7 +1182,10 @@ int main(int argc, char* args[])
 		game.handle_input();
 		game.update();
 		game.draw();
-		
+
+		emiter.update();
+		emiter.draw();
+
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 25, 25, 25, 255);
 		SDL_RenderPresent(SDL::Context::renderer);
 
