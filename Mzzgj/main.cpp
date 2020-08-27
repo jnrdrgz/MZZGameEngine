@@ -1,4 +1,3 @@
-
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <SDL_image.h>
@@ -9,22 +8,18 @@
 #include <sstream>
 #include <iostream>
 #include <random>
-
-
-
 #include <unordered_map>
+
 #include "timer.h"
 #include "vector2.h"
-
-#define KEYPRESS(X)	(X.type == SDL_KEYDOWN)
-#define KEYUNPRESS(X) (X.type == SDL_KEYUP)
-#define BUTTONPRESS(X) (X.type == SDL_MOUSEBUTTONDOWN)
-
-#define DEBUG 0
 
 const int screen_w = 640;
 const int screen_h = 480;
 bool pressed = false;
+
+int camera_x = 0;
+int camera_y = 0;
+double camera_angle = 0.0;
 
 //helpers
 int random_between(int mn, int mx) {
@@ -218,6 +213,154 @@ SDL_Texture* Assets::Sheet::texture = NULL;
 TTF_Font* SDL::Context::font = NULL;
 std::unordered_map<std::string, Mix_Chunk*> SoundManager::chunks;
 
+
+struct Particle
+{
+	Particle(int x, int y, int w, int h, int tx, int ty, Uint32 lifetime,
+		float gx, float gy) :
+		dst{ x,y,w,h },
+		src{ 16 * tx, 16 * ty, 16,16 },
+		tx{ tx }, ty{ ty },
+		gx{ gx }, gy{ gy }, active{ true }, lifetime{ lifetime }
+	{
+		angle = 0.0f;
+		life.start();
+	}
+
+	void update() {
+		ax += gx;
+		ay += gy;
+		vx += ax;
+		vy += ay;
+
+		dst.x += (int)vx;
+		dst.y += (int)vy;
+
+		if (life.getTicks() >= lifetime) {
+			std::cout << "life ended\n";
+			active = false;
+		}
+	}
+
+	void draw() {
+		if (active) SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, SDL_FLIP_NONE);
+	}
+
+	Uint32 lifetime;
+	Timer life;
+	SDL_Rect src, dst;
+	float gx, gy, ax{ 0.0f }, ay{ 0.0f }, vx{ 0.0f }, vy{ 0.0f }, angle{ 0.0f };
+	bool gdown, active;
+	int tx, ty;
+};
+
+//particles
+struct ParticleEmitter
+{
+	ParticleEmitter() : MAX_PARTICLES{ 200 } {
+		particles.reserve(MAX_PARTICLES);
+	}
+
+	ParticleEmitter(int range_x, int range_y,
+		int min_w, int max_w, int min_h, int max_h,
+		int tx, int ty, float gx, float gy, Uint32 lifetime)
+		: range_x{ range_x }, range_y{ range_y },
+		min_w{ min_w }, max_w{ max_w }, min_h{ min_h }, max_h{ max_h },
+		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime }, finished{ false },
+		MAX_PARTICLES{ 200 } {
+
+
+		particles.reserve(MAX_PARTICLES);
+		emitting = false;
+	}
+
+	ParticleEmitter(int range_x, int range_y,
+		int max_size, int min_size,
+		int tx, int ty, float gx, float gy, Uint32 lifetime)
+		: range_x{ range_x }, range_y{ range_y },
+		min_w{ min_size }, max_w{ max_size }, min_h{ min_size }, max_h{ max_size },
+		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime }, finished{false},
+		MAX_PARTICLES{ 200 } {
+
+
+		particles.reserve(MAX_PARTICLES);
+		emitting = false;
+	}
+
+
+	void emit(int x, int y, Uint32 emitter_lifetime) {
+		//if (particles.size() < MAX_PARTICLES) {
+		//	particles.emplace_back(
+		//		random_between(x - range_x, x + range_x),
+		//		random_between(y - range_y, y + range_y),
+		//		random_between(min_w, max_w),
+		//		random_between(min_h, max_h),
+		//		15, 10,
+		//		lifetime, gx, gy);
+		//}
+		particles.clear();
+		this->emitter_lifetime = emitter_lifetime;
+		life.start();
+
+		this->x = x;
+		this->y = y;
+		std::cout << "start emitting: " << x << " - " << y << "\n";
+		emitting = true;
+	}
+
+	void push_particle() {
+		if (particles.size() < MAX_PARTICLES) {
+			particles.emplace_back(
+				random_between(x - range_x, x + range_x),
+				random_between(y - range_y, y + range_y),
+				random_between(min_w, max_w),
+				random_between(min_h, max_h),
+				15, 10,
+				lifetime, gx, gy);
+		}
+	}
+
+	void update() {
+		if (emitting) {
+			push_particle();
+			if (life.getTicks() > emitter_lifetime) {
+				emitting = false;
+				finished = true;
+				life.stop();
+			}
+		}
+
+		if (particles.size() > 0) {
+			std::vector<Particle>::iterator particles_it = particles.begin();
+			for (auto& p : particles) {
+				p.update();
+				if (!p.active) {
+					particles.erase(particles_it);
+				}
+				particles_it++;
+			}
+		}
+	}
+
+	void draw() {
+		for (auto& p : particles) {
+			p.draw();
+		}
+	}
+
+	Uint32 lifetime;
+	Timer life;
+	Uint32 emitter_lifetime{0};
+	std::vector<Particle> particles;
+	const size_t MAX_PARTICLES;
+
+	int x, y, range_x, range_y, min_w, max_w, min_h, max_h, tx, ty;
+	float gx, gy;
+	bool emitting;
+	bool finished;
+};
+
+
 struct GameObject;
 
 struct InputHandler
@@ -239,16 +382,37 @@ struct Animation
 	Timer timer;
 };
 
+struct Emitter
+{
+	Emitter(GameObject& gameobject) : gameobject{gameobject} {
+		
+	}
+
+	virtual void emit() = 0;
+	virtual void update() = 0;
+	virtual void draw() = 0;
+
+	//std::unique_ptr<ParticleEmitter> emitter{ nullptr };
+	ParticleEmitter* emitter{ nullptr };
+	GameObject& gameobject;
+};
+
 //22 hor
 struct GameObject
 {
 	GameObject(int x, int y, int w, int h, int tilex, int tiley, std::string tag) :
-		tile{ tile }, dst{ x,y,w,h }, src{ tilex * 16,tiley * 16,16,16 },
+		tile{ tile }, dst{ x,y,w,h }, dst_camera{x,y,w,h}, src{ tilex * 16,tiley * 16,16,16 },
 		angle{ 0.0 }, flip{ SDL_FLIP_NONE }, tag{ tag }, active{true}{
 	}
 
 	void draw() {
-		if (active) SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, flip);
+		if (active) {
+			dst_camera.x = dst.x + camera_x;
+			dst_camera.y = dst.y + camera_y;
+			SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst_camera, angle+camera_angle, NULL, flip);
+		}
+
+		if (emitter) emitter->draw();
 	}
 	
 	void set_input_handler(std::unique_ptr<InputHandler> ptr) {
@@ -263,16 +427,21 @@ struct GameObject
 		animation = std::move(ptr);
 	}
 
+	void set_emitter(std::unique_ptr<ParticleEmitter> ptr) {
+		emitter = std::move(ptr);
+	}
+
 	int tile;
 	double angle;
 	SDL_RendererFlip flip;
-	SDL_Rect dst, src;
+	SDL_Rect dst, src, dst_camera;
 	std::string tag;
 	bool active;
 
 	std::unique_ptr<InputHandler> input_handler{ nullptr };
 	std::unique_ptr<AI> ai{ nullptr };
 	std::unique_ptr<Animation> animation{ nullptr };
+	std::unique_ptr<ParticleEmitter> emitter{ nullptr };
 	//updater()??
 
 };
@@ -388,15 +557,39 @@ struct MenuState : State
 	Menu menu;
 };
 
+struct EnemyDeathEmitter : Emitter
+{
+	EnemyDeathEmitter(GameObject& gameobject) 
+		: Emitter(gameobject) {
+		//auto e = std::make_unique<ParticleEmitter>( 10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
+		//emitter = std::move(e);
+
+		emitter = new ParticleEmitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
+	}
+
+	void emit() override {
+		emitter->emit(gameobject.dst.x, gameobject.dst.y, 2000);
+	}
+
+	void update() override{
+		emitter->update();
+	}
+	void draw() override {
+		emitter->draw();
+	}
+};
+
 struct PlayerInputHandler : InputHandler
 {
 	void hop(GameObject& gameobject) {
 		if (!hoping) {
-			gameobject.dst.y += 2;
+			//gameobject.dst.y += 2;
+			//gameobject.angle += 12;
 			hoping = true;
 		}
 		else {
-			gameobject.dst.y -= 2;
+			//gameobject.dst.y -= 2;
+			//gameobject.angle -= 12;
 			hoping = false;
 		}
 	}
@@ -407,6 +600,10 @@ struct PlayerInputHandler : InputHandler
 		//PLAYER MOVEMENT	
 		if (kbstate[SDL_SCANCODE_RIGHT] && !pressed[SDL_SCANCODE_RIGHT]) {
 			gameobject.dst.x += 32;
+			if (gameobject.dst.x > screen_w-64) {
+				camera_x -= 32;
+			}
+
 			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_NONE;
 			pressed[SDL_SCANCODE_RIGHT] = true;
@@ -662,7 +859,7 @@ struct PlayingState : State
 			gold_y += 32;
 		}
 
-		enemies.reserve(50);
+		enemies.reserve(100);
 		bullets.reserve(100);
 		bombs.reserve(100);
 
@@ -671,6 +868,7 @@ struct PlayingState : State
 	void add_enemy(int x, int y) {
 		auto& e = enemies.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
 		e.set_ai(std::make_unique<EnemyGoToTheGoldAI>(things_to_protect[0]));
+		e.set_emitter(std::make_unique<ParticleEmitter>(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500));
 	}
 	
 	std::unique_ptr<State> update() override { 
@@ -696,16 +894,30 @@ struct PlayingState : State
 			if (obj) {
 				obj->active = false;
 				e.active = false;
+				if (e.emitter) {
+					if (!e.emitter->emitting) {
+						e.emitter->emit(e.dst.x, e.dst.y, 2000);
+					} 
+				}
 			}
 
 			GameObject* protectable = physics.Collision(things_to_protect, e);
 			if (protectable) {
 				protectable->active = false;
-				e.active = false;
+				//e.active = false;
 			}
+			if (e.emitter) e.emitter->update();
+
 
 			if (!e.active) {
-				enemies.erase(enemies_it);
+				if (!e.emitter) {
+					enemies.erase(enemies_it);
+				}
+				else {
+					if (e.emitter->finished) {
+						enemies.erase(enemies_it);
+					}
+				}
 			}
 			enemies_it++;
 		}
@@ -845,147 +1057,6 @@ struct Game
 	std::unique_ptr<State> state{nullptr};
 };
 
-struct Particle
-{
-	
-	Particle(int x, int y, int w, int h, int tx, int ty, Uint32 lifetime,
-		float gx, float gy) :
-		dst{ x,y,w,h },
-		src{ 16 * tx, 16 * ty, 16,16 },
-		tx{ tx }, ty{ ty },
-		gx{ gx }, gy{ gy }, active{ true }, lifetime{lifetime}
-	{
-		angle = 0.0f;
-		life.start();
-	}
-
-	void update() {
-		ax += gx;
-		ay += gy;
-		vx += ax;
-		vy += ay;
-		
-		dst.x += (int)vx;
-		dst.y += (int)vy;
-
-		if (life.getTicks() >= lifetime) {
-			std::cout << "life ended\n";
-			active = false;
-		}
-	}
-
-	void draw() {
-		if (active) SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, SDL_FLIP_NONE);
-	}
-
-	Uint32 lifetime;
-	Timer life;
-	SDL_Rect src, dst;
-	float gx, gy, ax{ 0.0f }, ay{ 0.0f }, vx{ 0.0f }, vy{ 0.0f }, angle{ 0.0f };
-	bool gdown, active;
-	int tx, ty;
-};
-
-struct ParticleEmitter
-{
-	ParticleEmitter() :  MAX_PARTICLES {200} {
-		particles.reserve(MAX_PARTICLES);
-	}
-
-	ParticleEmitter(int range_x, int range_y,
-		int min_w, int max_w, int min_h, int max_h,
-		int tx, int ty, float gx, float gy, Uint32 lifetime) 
-		: range_x{ range_x }, range_y{range_y},
-		min_w{ min_w }, max_w{ max_w }, min_h{ min_h }, max_h{ max_h },
-		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime },
-		MAX_PARTICLES{ 200 } {
-		
-
-		particles.reserve(MAX_PARTICLES);
-		emitting = true;
-	}
-	
-		ParticleEmitter(int range_x, int range_y,
-		int max_size, int min_size,
-		int tx, int ty, float gx, float gy, Uint32 lifetime)
-		: range_x{ range_x }, range_y{ range_y },
-		min_w{ min_size }, max_w{ max_size }, min_h{ min_size }, max_h{ max_size },
-		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime },
-		MAX_PARTICLES{ 200 } {
-
-
-		particles.reserve(MAX_PARTICLES);
-		emitting = true;
-	}
-
-	void emit(int x, int y, Uint32 emitter_lifetime) {
-		//if (particles.size() < MAX_PARTICLES) {
-		//	particles.emplace_back(
-		//		random_between(x - range_x, x + range_x),
-		//		random_between(y - range_y, y + range_y),
-		//		random_between(min_w, max_w),
-		//		random_between(min_h, max_h),
-		//		15, 10,
-		//		lifetime, gx, gy);
-		//}
-		particles.clear();
-		this->emitter_lifetime = emitter_lifetime;
-		life.start();
-
-		this->x = x;
-		this->y = y;
-		emitting = true;
-	}
-
-	void push_particle() {
-		if (particles.size() < MAX_PARTICLES) {
-			particles.emplace_back(
-				random_between(x - range_x, x + range_x),
-				random_between(y - range_y, y + range_y),
-				random_between(min_w, max_w),
-				random_between(min_h, max_h),
-				15, 10,
-				lifetime, gx, gy);
-		}
-	}
-
-	
-
-	void update() {
-		if (emitting) {
-			push_particle();
-			if (life.getTicks() > emitter_lifetime) {
-				emitting = false;
-				life.stop();
-			}
-		}
-
-		std::vector<Particle>::iterator particles_it = particles.begin();
-		for (auto& p : particles) {
-			p.update();
-			if (!p.active) {
-				particles.erase(particles_it);
-			}
-			particles_it++;
-		}
-	}
-
-	void draw() {
-		for (auto& p : particles) {
-			p.draw();
-		}
-	}
-
-	Uint32 lifetime;
-	Timer life;
-	Uint32 emitter_lifetime;
-	std::vector<Particle> particles;
-	const size_t MAX_PARTICLES;
-
-	int x, y, range_x, range_y, min_w, max_w, min_h, max_h, tx, ty;
-	float gx, gy;
-	bool emitting;
-};
 
 int main(int argc, char* args[])
 {
@@ -1023,17 +1094,35 @@ int main(int argc, char* args[])
 			running = false;
 		}
 
-		if (kbstate[SDL_SCANCODE_RIGHT]) {
+		if (kbstate[SDL_SCANCODE_L]) {
+			camera_x += 32;
 		}
 
+		if (kbstate[SDL_SCANCODE_K]) {
+			camera_y -= 32;
+		}
+
+		if (kbstate[SDL_SCANCODE_J]) {
+			camera_x -= 32;
+		}
+
+		if (kbstate[SDL_SCANCODE_I]) {
+			camera_y += 32;
+		}
+
+		if (kbstate[SDL_SCANCODE_T]) {
+			camera_angle += 5.0;
+		}
+		if (kbstate[SDL_SCANCODE_R]) {
+			camera_angle -= 5.0;
+		}
+
+		
 		if (kbstate[SDL_SCANCODE_D] && !pressed) {
 			pressed = true;
 		}
 
 		while (SDL_PollEvent(&SDL::Context::event)) {
-			
-			if (KEYUNPRESS(SDL::Context::event)) pressed = false;
-
 			if (SDL::Context::event.type == SDL_QUIT) {
 				running = false;
 			}
