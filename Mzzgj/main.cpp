@@ -844,6 +844,91 @@ struct Game
 	std::unique_ptr<State> state{nullptr};
 };
 
+struct Particle
+{
+	
+	Particle(int x, int y, int w, int h, int tx, int ty, Uint32 lifetime,
+		float gx, float gy) :
+		dst{ x,y,w,h },
+		src{ 16 * tx, 16 * ty, 16,16 },
+		tx{ tx }, ty{ ty },
+		gx{ gx }, gy{ gy }, active{ true }, lifetime{lifetime}
+	{
+		angle = 0.0f;
+		life.start();
+	}
+
+	void update() {
+		ax += gx;
+		ay += gy;
+		vx += ax;
+		vy += ay;
+		
+		dst.x += (int)vx;
+		dst.y += (int)vy;
+
+		if (life.getTicks() >= lifetime) {
+			std::cout << "life ended\n";
+			active = false;
+		}
+	}
+
+	void draw() {
+		if (active) SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, SDL_FLIP_NONE);
+	}
+
+	Uint32 lifetime;
+	Timer life;
+	SDL_Rect src, dst;
+	float gx, gy, ax{ 0.0f }, ay{ 0.0f }, vx{ 0.0f }, vy{ 0.0f }, angle{ 0.0f };
+	bool gdown, active;
+	int tx, ty;
+};
+
+struct ParticleEmitter
+{
+	ParticleEmitter() :  MAX_PARTICLES {200} {
+		particles.reserve(MAX_PARTICLES);
+	}
+
+	void emit(int x, int y, int range_x, int range_y, 
+		int min_w, int max_w, int min_h, int max_h, 
+		int tx, int ty, float gx, float gy, Uint32 lifetime) {
+		
+		if (particles.size() < MAX_PARTICLES) {
+			particles.emplace_back(
+				random_between(x - range_x, x + range_x),
+				random_between(y - range_y, y + range_y),
+				random_between(min_w, max_w),
+				random_between(min_h, max_h),
+				15, 10,
+				lifetime, 0.0f, -0.1f);
+		}
+	}
+
+	void update() {
+		std::vector<Particle>::iterator particles_it = particles.begin();
+		for (auto& p : particles) {
+			p.update();
+			if (!p.active) {
+				particles.erase(particles_it);
+			}
+			particles_it++;
+		}
+	}
+
+	void draw() {
+		for (auto& p : particles) {
+			p.draw();
+		}
+	}
+
+	Uint32 lifetime;
+	Timer life;
+	std::vector<Particle> particles;
+	const size_t MAX_PARTICLES;
+};
+
 int main(int argc, char* args[])
 {
 	(void)argc;
@@ -864,6 +949,8 @@ int main(int argc, char* args[])
 	SoundManager sound; // a donde meto esto, no static?
 
 	GameObject g(250,250,64,64,10,10,"tag");
+
+	
 
 	while (running) {
 
@@ -892,6 +979,8 @@ int main(int argc, char* args[])
 
 			}
 			if (SDL::Context::event.type == SDL_MOUSEBUTTONDOWN) {
+				int x, y;
+				SDL_GetMouseState(&x, &y);
 				if (!clicked) {
 					
 					clicked = true;
