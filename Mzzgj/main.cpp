@@ -28,6 +28,7 @@ bool pressed = false;
 
 //helpers
 int random_between(int mn, int mx) {
+	if (mn == mx) return mn;
 	int n = rand() % (mx - mn) + mn;
 	return n;
 }
@@ -891,10 +892,52 @@ struct ParticleEmitter
 		particles.reserve(MAX_PARTICLES);
 	}
 
-	void emit(int x, int y, int range_x, int range_y, 
-		int min_w, int max_w, int min_h, int max_h, 
-		int tx, int ty, float gx, float gy, Uint32 lifetime) {
+	ParticleEmitter(int range_x, int range_y,
+		int min_w, int max_w, int min_h, int max_h,
+		int tx, int ty, float gx, float gy, Uint32 lifetime) 
+		: range_x{ range_x }, range_y{range_y},
+		min_w{ min_w }, max_w{ max_w }, min_h{ min_h }, max_h{ max_h },
+		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime },
+		MAX_PARTICLES{ 200 } {
 		
+
+		particles.reserve(MAX_PARTICLES);
+		emitting = true;
+	}
+	
+		ParticleEmitter(int range_x, int range_y,
+		int max_size, int min_size,
+		int tx, int ty, float gx, float gy, Uint32 lifetime)
+		: range_x{ range_x }, range_y{ range_y },
+		min_w{ min_size }, max_w{ max_size }, min_h{ min_size }, max_h{ max_size },
+		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime },
+		MAX_PARTICLES{ 200 } {
+
+
+		particles.reserve(MAX_PARTICLES);
+		emitting = true;
+	}
+
+	void emit(int x, int y, Uint32 emitter_lifetime) {
+		//if (particles.size() < MAX_PARTICLES) {
+		//	particles.emplace_back(
+		//		random_between(x - range_x, x + range_x),
+		//		random_between(y - range_y, y + range_y),
+		//		random_between(min_w, max_w),
+		//		random_between(min_h, max_h),
+		//		15, 10,
+		//		lifetime, gx, gy);
+		//}
+		particles.clear();
+		this->emitter_lifetime = emitter_lifetime;
+		life.start();
+
+		this->x = x;
+		this->y = y;
+		emitting = true;
+	}
+
+	void push_particle() {
 		if (particles.size() < MAX_PARTICLES) {
 			particles.emplace_back(
 				random_between(x - range_x, x + range_x),
@@ -902,11 +945,21 @@ struct ParticleEmitter
 				random_between(min_w, max_w),
 				random_between(min_h, max_h),
 				15, 10,
-				lifetime, 0.0f, -0.1f);
+				lifetime, gx, gy);
 		}
 	}
 
+	
+
 	void update() {
+		if (emitting) {
+			push_particle();
+			if (life.getTicks() > emitter_lifetime) {
+				emitting = false;
+				life.stop();
+			}
+		}
+
 		std::vector<Particle>::iterator particles_it = particles.begin();
 		for (auto& p : particles) {
 			p.update();
@@ -925,8 +978,13 @@ struct ParticleEmitter
 
 	Uint32 lifetime;
 	Timer life;
+	Uint32 emitter_lifetime;
 	std::vector<Particle> particles;
 	const size_t MAX_PARTICLES;
+
+	int x, y, range_x, range_y, min_w, max_w, min_h, max_h, tx, ty;
+	float gx, gy;
+	bool emitting;
 };
 
 int main(int argc, char* args[])
@@ -950,7 +1008,11 @@ int main(int argc, char* args[])
 
 	GameObject g(250,250,64,64,10,10,"tag");
 
-	
+	//ParticleEmitter emitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
+	//emitter.emit(x, y, 4000);
+	//emitter.update();
+	//emitter.draw();
+
 
 	while (running) {
 
@@ -981,6 +1043,7 @@ int main(int argc, char* args[])
 			if (SDL::Context::event.type == SDL_MOUSEBUTTONDOWN) {
 				int x, y;
 				SDL_GetMouseState(&x, &y);
+
 				if (!clicked) {
 					
 					clicked = true;
@@ -1010,6 +1073,7 @@ int main(int argc, char* args[])
 		game.update();
 		game.draw();
 
+		
 		
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 25, 25, 25, 255);
 		SDL_RenderPresent(SDL::Context::renderer);
