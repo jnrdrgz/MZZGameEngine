@@ -220,6 +220,7 @@ struct Particle
 		float gx, float gy) :
 		dst{ x,y,w,h },
 		src{ 16 * tx, 16 * ty, 16,16 },
+		dst_camera{x,y,w,h},
 		tx{ tx }, ty{ ty },
 		gx{ gx }, gy{ gy }, active{ true }, lifetime{ lifetime }
 	{
@@ -237,7 +238,7 @@ struct Particle
 		dst.y += (int)vy;
 
 		if (life.getTicks() >= lifetime) {
-			std::cout << "life ended\n";
+			//std::cout << "life ended\n";
 			active = false;
 		}
 	}
@@ -248,7 +249,7 @@ struct Particle
 
 	Uint32 lifetime;
 	Timer life;
-	SDL_Rect src, dst;
+	SDL_Rect src, dst, dst_camera;
 	float gx, gy, ax{ 0.0f }, ay{ 0.0f }, vx{ 0.0f }, vy{ 0.0f }, angle{ 0.0f };
 	bool gdown, active;
 	int tx, ty;
@@ -600,7 +601,7 @@ struct PlayerInputHandler : InputHandler
 		//PLAYER MOVEMENT	
 		if (kbstate[SDL_SCANCODE_RIGHT] && !pressed[SDL_SCANCODE_RIGHT]) {
 			gameobject.dst.x += 32;
-			if (gameobject.dst.x > screen_w-64) {
+			if (gameobject.dst_camera.x > screen_w-64) {
 				camera_x -= 32;
 			}
 
@@ -614,6 +615,9 @@ struct PlayerInputHandler : InputHandler
 
 		if (kbstate[SDL_SCANCODE_LEFT] && !pressed[SDL_SCANCODE_LEFT]) {
 			gameobject.dst.x -= 32;
+			if (gameobject.dst_camera.x < 64) {
+				camera_x += 32;
+			}
 			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_HORIZONTAL;
 			pressed[SDL_SCANCODE_LEFT] = true;
@@ -624,6 +628,11 @@ struct PlayerInputHandler : InputHandler
 
 		if (kbstate[SDL_SCANCODE_UP] && !pressed[SDL_SCANCODE_UP]) {
 			gameobject.dst.y -= 32;
+			if (gameobject.dst_camera.y < 64) {
+				camera_y += 32;
+			}
+			//camera_y += 32;
+
 			pressed[SDL_SCANCODE_UP] = true;
 		}
 		if (!kbstate[SDL_SCANCODE_UP]) {
@@ -632,6 +641,10 @@ struct PlayerInputHandler : InputHandler
 
 		if (kbstate[SDL_SCANCODE_DOWN] && !pressed[SDL_SCANCODE_DOWN]) {
 			gameobject.dst.y += 32;
+
+			if (gameobject.dst_camera.y > screen_h - 64) {
+				camera_y -= 32;
+			}
 			pressed[SDL_SCANCODE_DOWN] = true;
 		}
 		if (!kbstate[SDL_SCANCODE_DOWN]) {
@@ -852,7 +865,7 @@ struct PlayingState : State
 
 		things_to_protect.reserve(13);
 
-		int gold_y = 32;
+		int gold_y = 32*10;
 		int gold_x = 32*9;
 		for (int i = 0; i < 13; i++) {
 			things_to_protect.emplace_back(gold_x, gold_y, 32, 32, 41, 4, "gold");
@@ -888,7 +901,9 @@ struct PlayingState : State
 		
 		std::vector<GameObject>::iterator enemies_it = enemies.begin();
 		for (auto& e : enemies) {
-			if(e.ai) e.ai->update(e);
+			if (e.active) {
+				if (e.ai) e.ai->update(e);
+			}
 
 			GameObject* obj = physics.Collision(bullets, e);
 			if (obj) {
@@ -896,7 +911,7 @@ struct PlayingState : State
 				e.active = false;
 				if (e.emitter) {
 					if (!e.emitter->emitting) {
-						e.emitter->emit(e.dst.x, e.dst.y, 2000);
+						e.emitter->emit(e.dst_camera.x, e.dst_camera.y, 2000);
 					} 
 				}
 			}
@@ -908,14 +923,15 @@ struct PlayingState : State
 			}
 			if (e.emitter) e.emitter->update();
 
-
-			if (!e.active) {
-				if (!e.emitter) {
-					enemies.erase(enemies_it);
-				}
-				else {
-					if (e.emitter->finished) {
+			if (enemies.size() > 0) {
+				if (!e.active) {
+					if (!e.emitter) {
 						enemies.erase(enemies_it);
+					}
+					else {
+						if (e.emitter->finished) {
+							enemies.erase(enemies_it);
+						}
 					}
 				}
 			}
