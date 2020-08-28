@@ -337,6 +337,7 @@ struct ParticleEmitter
 				p.update();
 				if (!p.active) {
 					particles.erase(particles_it);
+					particles_it--;
 				}
 				particles_it++;
 			}
@@ -872,7 +873,7 @@ struct PlayingState : State
 			gold_y += 32;
 		}
 
-		enemies.reserve(100);
+		enemies.reserve(50);
 		bullets.reserve(100);
 		bombs.reserve(100);
 
@@ -885,7 +886,6 @@ struct PlayingState : State
 	}
 	
 	std::unique_ptr<State> update() override { 
-		std::vector<GameObject>::iterator bullets_it = bullets.begin();
 		for (auto& b : bullets) {
 			if (b.ai) b.ai->update(b);
 			
@@ -893,13 +893,18 @@ struct PlayingState : State
 				b.active = false;
 			}
 			
+		}
+
+		std::vector<GameObject>::iterator bullets_it = bullets.begin();
+		for (auto& b : bullets) {
 			if (!b.active) {
 				bullets.erase(bullets_it);
+				bullets_it--;
 			}
 			bullets_it++;
 		}
+
 		
-		std::vector<GameObject>::iterator enemies_it = enemies.begin();
 		for (auto& e : enemies) {
 			if (e.active) {
 				if (e.ai) e.ai->update(e);
@@ -923,14 +928,21 @@ struct PlayingState : State
 			}
 			if (e.emitter) e.emitter->update();
 
+
+		}
+
+		std::vector<GameObject>::iterator enemies_it = enemies.begin();
+		for (auto& e : enemies) {
 			if (enemies.size() > 0) {
 				if (!e.active) {
 					if (!e.emitter) {
 						enemies.erase(enemies_it);
+						enemies_it--;
 					}
 					else {
 						if (e.emitter->finished) {
 							enemies.erase(enemies_it);
+							enemies_it--;
 						}
 					}
 				}
@@ -1178,8 +1190,6 @@ int main(int argc, char* args[])
 		game.update();
 		game.draw();
 
-		
-		
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 25, 25, 25, 255);
 		SDL_RenderPresent(SDL::Context::renderer);
 
