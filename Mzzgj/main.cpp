@@ -21,6 +21,15 @@ int camera_x = 0;
 int camera_y = 0;
 double camera_angle = 0.0;
 
+#define DEBUG 0
+
+void LOG(std::string where, std::string message) {
+#if DEBUG
+	std::cout << "[" << where << "]" << " " << message << "\n";
+#endif // DEBUG
+
+}
+
 //helpers
 int random_between(int mn, int mx) {
 	if (mn == mx) return mn;
@@ -336,8 +345,8 @@ struct ParticleEmitter
 			for (auto& p : particles) {
 				p.update();
 				if (!p.active) {
-					particles.erase(particles_it);
-					particles_it--;
+					particles_it = particles.erase(particles_it);
+					//particles_it--;
 				}
 				particles_it++;
 			}
@@ -822,6 +831,10 @@ struct Physics
 		return false;
 	}
 
+	std::string Collision_tag(GameObject& a, GameObject& b) {
+		return b.tag;
+	}
+
 	bool check_boundaries(GameObject& a) {
 		if (a.dst.x < 0 || a.dst.x + a.dst.w > screen_w ||
 			a.dst.x < 0 || a.dst.x + a.dst.w > screen_w) {
@@ -885,30 +898,31 @@ struct PlayingState : State
 		e.set_emitter(std::make_unique<ParticleEmitter>(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500));
 	}
 	
-	std::unique_ptr<State> update() override { 
+	std::unique_ptr<State> update() override {
+		std::vector<GameObject>::iterator bullets_it = bullets.begin();
 		for (auto& b : bullets) {
-			if (b.ai) b.ai->update(b);
 			
+			if (b.ai) b.ai->update(b);
+			//LOG("PLAYINGSTATE", "bullet ai-updated");
+
 			if (physics.check_boundaries(b)) {
 				b.active = false;
 			}
-			
-		}
 
-		std::vector<GameObject>::iterator bullets_it = bullets.begin();
-		for (auto& b : bullets) {
 			if (!b.active) {
-				bullets.erase(bullets_it);
-				bullets_it--;
+				bullets_it = bullets.erase(bullets_it);
 			}
 			bullets_it++;
+			//LOG("PLAYINGSTATE", "inactive bullets delted");
 		}
+		LOG("PLAYINGSTATE", "bullets updated");
 
-		
+		std::vector<GameObject>::iterator enemies_it = enemies.begin();
 		for (auto& e : enemies) {
 			if (e.active) {
 				if (e.ai) e.ai->update(e);
 			}
+			LOG("PLAYINGSTATE", "enemies AI updated");
 
 			GameObject* obj = physics.Collision(bullets, e);
 			if (obj) {
@@ -919,42 +933,49 @@ struct PlayingState : State
 						e.emitter->emit(e.dst_camera.x, e.dst_camera.y, 2000);
 					} 
 				}
-			}
+			};
 
 			GameObject* protectable = physics.Collision(things_to_protect, e);
 			if (protectable) {
 				protectable->active = false;
 				//e.active = false;
 			}
+			LOG("PLAYINGSTATE", "enemies collisions checkd");
 			if (e.emitter) e.emitter->update();
+			LOG("PLAYINGSTATE", "eemitter updated");
 
-
-		}
-
-		std::vector<GameObject>::iterator enemies_it = enemies.begin();
-		for (auto& e : enemies) {
-			if (enemies.size() > 0) {
-				if (!e.active) {
-					if (!e.emitter) {
-						enemies.erase(enemies_it);
-						enemies_it--;
-					}
-					else {
-						if (e.emitter->finished) {
-							enemies.erase(enemies_it);
-							enemies_it--;
+			for (auto& e : enemies) {
+				if (enemies.size() > 0) {
+					if (!e.active) {
+						if (!e.emitter) {
+							enemies_it = enemies.erase(enemies_it);
+							//enemies_it--;
+						}
+						else {
+							if (e.emitter->finished) {
+								enemies_it = enemies.erase(enemies_it);
+								//enemies_it--;
+							}
 						}
 					}
 				}
+				enemies_it++;
 			}
-			enemies_it++;
+			LOG("PLAYINGSTATE", "inactive enemies deleted");
+
 		}
+		LOG("PLAYINGSTATE", "enemies updated");
+
+		
 
 		if (enemy_spawn_timer.getTicks() > 3000) {
-			add_enemy(0,random_between(0,15)*32);
+			for (int i = 0; i < 4; i++) {
+				add_enemy(random_between(-128, 0), random_between(0, 15) * 32);
+			}
 			enemy_spawn_timer.stop();
 			enemy_spawn_timer.start();
 		}
+		LOG("PLAYINGSTATE", "enemies added ");
 
 		return nullptr;
 	}
@@ -978,6 +999,7 @@ struct PlayingState : State
 
 		return nullptr;
 	}
+
 	void draw() override {
 		player.draw();
 		for (auto& e : enemies) {
@@ -1186,8 +1208,11 @@ int main(int argc, char* args[])
 			}
 		}
 
+		LOG("MAIN", "handle_input");
 		game.handle_input();
+		LOG("MAIN", "update");
 		game.update();
+		LOG("MAIN", "draw");
 		game.draw();
 
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 25, 25, 25, 255);
