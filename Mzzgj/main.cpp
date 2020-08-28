@@ -345,8 +345,9 @@ struct ParticleEmitter
 			for (auto& p : particles) {
 				p.update();
 				if (!p.active) {
-					particles_it = particles.erase(particles_it);
-					//particles_it--;
+					//particles_it = 
+					particles.erase(particles_it);
+					particles_it--;
 				}
 				particles_it++;
 			}
@@ -910,7 +911,9 @@ struct PlayingState : State
 			}
 
 			if (!b.active) {
-				bullets_it = bullets.erase(bullets_it);
+				//bullets_it = 
+				bullets.erase(bullets_it);
+				bullets_it--;
 			}
 			bullets_it++;
 			//LOG("PLAYINGSTATE", "inactive bullets delted");
@@ -944,20 +947,23 @@ struct PlayingState : State
 			if (e.emitter) e.emitter->update();
 			LOG("PLAYINGSTATE", "eemitter updated");
 
-			for (auto& e : enemies) {
-				if (enemies.size() > 0) {
-					if (!e.active) {
-						if (!e.emitter) {
-							enemies_it = enemies.erase(enemies_it);
-							//enemies_it--;
-						}
-						else {
-							if (e.emitter->finished) {
-								enemies_it = enemies.erase(enemies_it);
-								//enemies_it--;
-							}
+			if (enemies.size() > 0) {
+				if (!e.active) {
+					if (!e.emitter) {
+						//enemies_it = 
+						enemies.erase(enemies_it);
+						enemies_it--;
+					}
+					else {
+						if (e.emitter->finished) {
+							//enemies_it = 
+							enemies.erase(enemies_it);
+							enemies_it--;
 						}
 					}
+					//enemies.erase(enemies_it);
+					//enemies_it--;
+
 				}
 				enemies_it++;
 			}
