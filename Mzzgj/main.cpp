@@ -125,8 +125,8 @@ struct SoundManager
 		Mix_HaltChannel(channel);
 	}
 
-	static void play_for_seconds(std::string sound, int ms) {
-		Mix_PlayChannelTimed(-1, chunks[sound], -1, ms);
+	static int play_for_seconds(std::string sound, int ms) {
+		return Mix_PlayChannelTimed(-1, chunks[sound], -1, ms);
 	}
 
 	static void play_music(std::string sound) {
@@ -533,7 +533,6 @@ struct Menu
 ///////////////////
 //////STATES///////
 ///////////////////
-
 struct State
 {
 	virtual std::unique_ptr<State> update() = 0;
@@ -858,8 +857,6 @@ struct Physics
 
 		return false;
 	}
-
-
 };
 
 struct PlayingState : State
@@ -951,10 +948,16 @@ struct PlayingState : State
 		//my senses say that this is not okay
 		PlayerInputHandler* pih = (PlayerInputHandler*)player.input_handler.get();
 		if(pih->shooting){
-			auto& b = bullets.emplace_back(player.dst.x, player.dst.y, 32, 32, 35, 6, "bullet");
-			b.set_ai(std::make_unique<NormalBulletAI>(player));
-
+			if (bullets.size() < 5) {
+				auto& b = bullets.emplace_back(player.dst.x, player.dst.y, 32, 32, 35, 6, "bullet");
+				b.set_ai(std::make_unique<NormalBulletAI>(player));
+			}
+			else {
+				std::cout << "max 5 bullets!!\n";
+			}
 			pih->shooting = false;
+
+
 		}
 
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
@@ -993,11 +996,14 @@ struct PlayingState : State
 
 struct IntroState : State
 {
-	IntroState() : intro{ "INTRO", screen_w / 2, screen_h / 2, 100, 50, {255,125,0,0} }
+	IntroState() : intro{ "PROTECT THE GOLD", screen_w / 2, screen_h / 2, 50, {255,125,0,0} }
 	{
 		timer.start();
 		limit = 1000 * 10;
-		SoundManager::play_for_seconds("hipintro", limit);
+		music_channel = SoundManager::play_for_seconds("hipintro", limit);
+
+		intro.rct.x = screen_w / 2 - intro.rct.w / 2;
+		intro.rct.y = screen_h / 2 - intro.rct.h / 2;
 	}
 
 	std::unique_ptr<State> update() override {
@@ -1013,6 +1019,7 @@ struct IntroState : State
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
 		if (kbstate[SDL_SCANCODE_SPACE]) {
 			timer.stop();
+			SoundManager::shut_up_channel(music_channel);
 			return std::make_unique<PlayingState>();
 		}
 	}
@@ -1023,7 +1030,7 @@ struct IntroState : State
 
 	Text intro;
 	Timer timer;
-	int limit;
+	int limit, music_channel;
 };
 
 std::unique_ptr<State> MenuState::handle_input(){
