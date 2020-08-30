@@ -2,11 +2,13 @@
 #include <SDL_ttf.h>
 #include <SDL_image.h>
 #include <SDL_mixer.h>
+
 #include <vector>
 #include <memory>
 #include <string>
-#include <sstream>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <random>
 #include <unordered_map>
 
@@ -797,6 +799,37 @@ struct NormalBulletAI : AI {
 	SDL_RendererFlip orientation;
 };
 
+struct EnemySpawnerAI : AI {
+	EnemySpawnerAI(std::vector<GameObject>& enemy_vec, Uint32 respawn_interval, int min, int max) :
+		enemy_vec{ enemy_vec }, respawn_interval{ respawn_interval }, min{ min }, max{max}
+	{
+
+	}
+
+	void add_enemy(int x, int y) {
+		auto& e = enemy_vec.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
+		//randomize ai
+		e.set_ai(std::make_unique<EnemyMoveRandomlyAI>());
+		e.set_emitter(std::make_unique<ParticleEmitter>(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500));
+	}
+
+	void update(GameObject& gameobject) override {
+		
+		if (respawn_timer.getTicks() > 3000) {
+			for (int i = 0; i < random_between(min,max); i++) {
+				add_enemy(gameobject.dst.x, gameobject.dst.y);
+			}
+			respawn_timer.stop();
+			respawn_timer.start();
+		}
+	}
+
+	std::vector<GameObject>& enemy_vec;
+	Uint32 respawn_interval;
+	Timer respawn_timer;
+	int min, max;
+};
+
 struct NormalBombUpdateAI : AI {
 	NormalBombUpdateAI() {
 		timer.start();
@@ -859,11 +892,116 @@ struct Physics
 	}
 };
 
+struct Level
+{
+	Level() :
+		player{ 0,0,32,32,29,0, "player" }
+	{
+		player.set_input_handler(std::make_unique<PlayerInputHandler>());
+		
+		camera_x = 32*30;
+		camera_y = 32*30;
+	}
+
+	void add_enemy_spawner(int x, int y) {
+		auto& es = enemy_spawners.emplace_back(x, y, 32, 32, 25, 13, "spawner");
+		es.set_ai(std::make_unique<EnemySpawnerAI>(enemies, 1000*10, 3, 10));
+	}
+
+	void add_wall(int x, int y) {
+		auto& w = walls.emplace_back(x, y, 32, 32, 0, 1, "wall");
+	}
+
+	void add_thing_to_protect(int x, int y) {
+		things_to_protect.emplace_back(x, y, 32, 32, 41, 4, "gold");
+	}
+
+	void parse_map(std::string file_map_path) {
+		std::ifstream stream(file_map_path);
+		std::string line;
+
+		int x = 0;
+		int y = 0;
+		while (getline(stream, line)) {
+			for (char c : line) {
+				if (c != '\n') {
+					switch (c) {
+					case 'S':
+						add_enemy_spawner(x, y);
+						break;
+					case 'G':
+						add_thing_to_protect(x, y);
+						break;
+					case 'P':
+						player.dst.x = x * 32;
+						camera_x = player.dst.x - 32 * 10;
+
+						player.dst.y = y * 32;
+						camera_y = player.dst.y - 32 * 7;
+						break;
+
+					case '1':
+						add_wall(x, y);
+						break;
+					default:
+						break;
+					}
+				}
+
+				x+=32;
+			}
+			y+=32;
+			x=0;
+		}
+	}
+
+	void update() {
+
+	}
+
+	void draw() {
+		player.draw();
+		for (auto& e : enemies) {
+			e.draw();
+		}
+		for (auto& t : things_to_protect) {
+			t.draw();
+		}
+		for (auto& b : bullets) {
+			b.draw();
+		}
+		for (auto& b : bombs) {
+			b.draw();
+		}
+		for (auto& w : walls) {
+			w.draw();
+		}
+		for (auto& es : enemy_spawners) {
+			es.draw();
+		}
+	}
+
+	//boomerang sword?
+	GameObject player;
+	std::vector<GameObject> enemies;
+	std::vector<GameObject> things_to_protect;
+	std::vector<GameObject> bullets;
+	std::vector<GameObject> bombs;
+	std::vector<GameObject> walls;
+	std::vector<GameObject> enemy_spawners;
+	Timer enemy_spawn_timer; //this have to go in enemy spawner ai
+	Physics physics;
+};
+
 struct PlayingState : State
 {
 	PlayingState() : 
 		player{ 32*9,0,32,32,29,0, "player" }
 	{
+		//create enemy spawner
+		//parse game map
+		//load things
+
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
 		enemy_spawn_timer.start();
 
