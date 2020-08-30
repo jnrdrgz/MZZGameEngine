@@ -860,9 +860,20 @@ struct Physics
 		return b.tag;
 	}
 
+	//doesnt check because I dont need it for now
 	bool check_boundaries(GameObject& a) {
 		if (a.dst.x < 0 || a.dst.x + a.dst.w > screen_w ||
 			a.dst.x < 0 || a.dst.x + a.dst.w > screen_w) {
+			return true;
+		}
+
+		return false;
+	}
+
+	bool check_boundaries(GameObject& a, int max_x) {
+		std::cout << a.dst.x << " - " << a.dst.y << "\n";
+
+		if (a.dst.x < 0 || a.dst.x + a.dst.w > max_x) {
 			return true;
 		}
 
@@ -974,7 +985,7 @@ struct Level
 	std::unique_ptr<State> update(){
 		for (auto& b : bullets) {
 			if (b.ai) b.ai->update(b);
-			if (physics.check_boundaries(b)) {
+			if (physics.check_boundaries(b, screen_w * 3)) {
 				b.active = false;
 			}
 		}
@@ -1079,134 +1090,6 @@ struct Level
 	std::vector<GameObject> enemy_spawners;
 	Timer enemy_spawn_timer; //this have to go in enemy spawner ai
 	Physics physics;
-};
-
-struct PlayingState_ : State
-{
-	PlayingState_() :
-	player{ 0,0,32,32,29,0, "player" }
-	{
-		//create enemy spawner
-		//parse game map
-		//load things
-
-		player.set_input_handler(std::make_unique<PlayerInputHandler>());
-		enemy_spawn_timer.start();
-
-
-
-	}
-	
-	void add_enemy(int x, int y) {
-		auto& e = enemies.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
-		e.set_ai(std::make_unique<EnemyGoToTheGoldAI>(things_to_protect[0]));
-		e.set_emitter(std::make_unique<ParticleEmitter>(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500));
-	}
-	
-	std::unique_ptr<State> update() override {
-		for (auto& b : bullets) {
-			if (b.ai) b.ai->update(b);
-			if (physics.check_boundaries(b)) {
-				b.active = false;
-			}
-		}
-
-		std::erase_if(bullets, [](GameObject& g) { return !g.active; });
-
-		for (auto& e : enemies) {
-			if (e.active) {
-				if (e.ai) e.ai->update(e);
-			}
-		
-			GameObject* obj = physics.Collision(bullets, e);
-			if (obj) {
-				obj->active = false;
-				e.active = false;
-				if (e.emitter) {
-					if (!e.emitter->emitting) {
-						e.emitter->emit(e.dst_camera.x, e.dst_camera.y, 2000);
-					} 
-				}
-			};
-
-			GameObject* protectable = physics.Collision(things_to_protect, e);
-			if (protectable) {
-				protectable->active = false;
-				//e.active = false;
-			}
-			if (e.emitter) e.emitter->update();
-		}
-
-		std::erase_if(enemies, [](GameObject& g) {
-			if (!g.emitter) {
-				return !g.active;
-			}
-			else {
-				return !g.active && g.emitter->finished;
-			}
-		});
-
-		if (enemy_spawn_timer.getTicks() > 3000) {
-			for (int i = 0; i < 4; i++) {
-				add_enemy(random_between(-128, 0), random_between(0, 15) * 32);
-			}
-			enemy_spawn_timer.stop();
-			enemy_spawn_timer.start();
-		}
-
-		return nullptr;
-	}
-
-	std::unique_ptr<State> handle_input() override {
-		player.input_handler->handle_input(player);
-
-		//my senses say that this is not okay
-		PlayerInputHandler* pih = (PlayerInputHandler*)player.input_handler.get();
-		if(pih->shooting){
-			if (bullets.size() < 5) {
-				auto& b = bullets.emplace_back(player.dst.x, player.dst.y, 32, 32, 35, 6, "bullet");
-				b.set_ai(std::make_unique<NormalBulletAI>(player));
-			}
-			else {
-				std::cout << "max 5 bullets!!\n";
-			}
-			pih->shooting = false;
-
-
-		}
-
-		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
-		if (kbstate[SDL_SCANCODE_ESCAPE]) {
-			return std::make_unique<MenuState>();
-		}
-
-		return nullptr;
-	}
-
-	void draw() override {
-		player.draw();
-		for (auto& e : enemies) {
-			e.draw();
-		}
-		for (auto& t : things_to_protect) {
-			t.draw();
-		}
-		for (auto& b : bullets) {
-			b.draw();
-		}
-		for (auto& b : bombs) {
-			b.draw();
-		}
-	}
-
-	GameObject player;
-	std::vector<GameObject> enemies;
-	std::vector<GameObject> things_to_protect;
-	std::vector<GameObject> bombs;
-	std::vector<GameObject> bullets;
-	Timer enemy_spawn_timer;
-	Physics physics;
-
 };
 
 struct PlayingState : State
