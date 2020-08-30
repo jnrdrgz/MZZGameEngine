@@ -803,7 +803,7 @@ struct EnemySpawnerAI : AI {
 	EnemySpawnerAI(std::vector<GameObject>& enemy_vec, Uint32 respawn_interval, int min, int max) :
 		enemy_vec{ enemy_vec }, respawn_interval{ respawn_interval }, min{ min }, max{max}
 	{
-
+		respawn_timer.start();
 	}
 
 	void add_enemy(int x, int y) {
@@ -815,7 +815,7 @@ struct EnemySpawnerAI : AI {
 
 	void update(GameObject& gameobject) override {
 		
-		if (respawn_timer.getTicks() > 3000) {
+		if (respawn_timer.getTicks() > respawn_interval) {
 			for (int i = 0; i < random_between(min,max); i++) {
 				add_enemy(gameobject.dst.x, gameobject.dst.y);
 			}
@@ -899,13 +899,25 @@ struct Level
 	{
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
 		
-		camera_x = 32*30;
-		camera_y = 32*30;
+		//camera_x = 32*30;
+		//camera_y = 32*30;
+		//camera_x = 0;
+		//camera_y = 0;
+		things_to_protect.reserve(20);
+		enemies.reserve(100);
+		bullets.reserve(50);
+		bombs.reserve(50);
+		walls.reserve(100);
+		enemy_spawners.reserve(20);
+
+		parse_map("map_test");
+
+		enemy_spawn_timer.start();
 	}
 
 	void add_enemy_spawner(int x, int y) {
 		auto& es = enemy_spawners.emplace_back(x, y, 32, 32, 25, 13, "spawner");
-		es.set_ai(std::make_unique<EnemySpawnerAI>(enemies, 1000*10, 3, 10));
+		es.set_ai(std::make_unique<EnemySpawnerAI>(enemies, 1000*15, 3, 10));
 	}
 
 	void add_wall(int x, int y) {
@@ -918,6 +930,7 @@ struct Level
 
 	void parse_map(std::string file_map_path) {
 		std::ifstream stream(file_map_path);
+		if (!stream) LOG("PARSE MAP", "error map file not found\n");
 		std::string line;
 
 		int x = 0;
@@ -933,17 +946,20 @@ struct Level
 						add_thing_to_protect(x, y);
 						break;
 					case 'P':
-						player.dst.x = x * 32;
-						camera_x = player.dst.x - 32 * 10;
+						player.dst.x = x;
+						camera_x = -(player.dst.x);
 
-						player.dst.y = y * 32;
-						camera_y = player.dst.y - 32 * 7;
+						player.dst.y = y;
+						camera_y = -(player.dst.y);
 						break;
 
 					case '1':
 						add_wall(x, y);
 						break;
+					case '0':
+						break;
 					default:
+						std::cout << "unknown tile\n";
 						break;
 					}
 				}
@@ -955,8 +971,80 @@ struct Level
 		}
 	}
 
-	void update() {
+	std::unique_ptr<State> update(){
+		for (auto& b : bullets) {
+			if (b.ai) b.ai->update(b);
+			if (physics.check_boundaries(b)) {
+				b.active = false;
+			}
+		}
 
+		std::erase_if(bullets, [](GameObject& g) { return !g.active; });
+
+		for (auto& e : enemies) {
+			if (e.active) {
+				if (e.ai) e.ai->update(e);
+			}
+
+			GameObject* obj = physics.Collision(bullets, e);
+			if (obj) {
+				obj->active = false;
+				e.active = false;
+				if (e.emitter) {
+					if (!e.emitter->emitting) {
+						e.emitter->emit(e.dst_camera.x, e.dst_camera.y, 2000);
+					}
+				}
+			};
+
+			GameObject* protectable = physics.Collision(things_to_protect, e);
+			if (protectable) {
+				protectable->active = false;
+				//e.active = false;
+			}
+			if (e.emitter) e.emitter->update();
+		}
+
+		std::erase_if(enemies, [](GameObject& g) {
+			if (!g.emitter) {
+				return !g.active;
+			}
+			else {
+				return !g.active && g.emitter->finished;
+			}
+		});
+
+		for (auto& es : enemy_spawners) {
+			es.ai->update(es);
+		}
+
+		return nullptr;
+	}
+
+	std::unique_ptr<State> handle_input(){
+		if (player.input_handler) player.input_handler->handle_input(player);
+
+		//my senses say that this is not okay
+		PlayerInputHandler* pih = (PlayerInputHandler*)player.input_handler.get();
+		if (pih->shooting) {
+			if (bullets.size() < 5) {
+				auto& b = bullets.emplace_back(player.dst.x, player.dst.y, 32, 32, 35, 6, "bullet");
+				b.set_ai(std::make_unique<NormalBulletAI>(player));
+			}
+			else {
+				std::cout << "max 5 bullets!!\n";
+			}
+			pih->shooting = false;
+
+
+		}
+
+		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
+		if (kbstate[SDL_SCANCODE_ESCAPE]) {
+			return std::make_unique<MenuState>();
+		}
+
+		return nullptr;
 	}
 
 	void draw() {
@@ -993,10 +1081,10 @@ struct Level
 	Physics physics;
 };
 
-struct PlayingState : State
+struct PlayingState_ : State
 {
-	PlayingState() : 
-		player{ 32*9,0,32,32,29,0, "player" }
+	PlayingState_() :
+	player{ 0,0,32,32,29,0, "player" }
 	{
 		//create enemy spawner
 		//parse game map
@@ -1005,18 +1093,7 @@ struct PlayingState : State
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
 		enemy_spawn_timer.start();
 
-		things_to_protect.reserve(13);
 
-		int gold_y = 32*10;
-		int gold_x = 32*9;
-		for (int i = 0; i < 13; i++) {
-			things_to_protect.emplace_back(gold_x, gold_y, 32, 32, 41, 4, "gold");
-			gold_y += 32;
-		}
-
-		enemies.reserve(50);
-		bullets.reserve(100);
-		bombs.reserve(100);
 
 	}
 	
@@ -1129,6 +1206,31 @@ struct PlayingState : State
 	std::vector<GameObject> bullets;
 	Timer enemy_spawn_timer;
 	Physics physics;
+
+};
+
+struct PlayingState : State
+{
+	PlayingState() : level{} {
+		
+	}
+
+	std::unique_ptr<State> update() override {
+		level.update();
+		return nullptr;
+	}
+
+	std::unique_ptr<State> handle_input() override {
+		level.handle_input();
+		return nullptr;
+	}
+
+	void draw() override {
+		level.draw();
+	}
+
+	//std::unique_ptr<State>
+	Level level;
 
 };
 
