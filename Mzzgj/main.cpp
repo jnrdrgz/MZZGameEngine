@@ -11,6 +11,7 @@
 #include <sstream>
 #include <random>
 #include <unordered_map>
+#include <random>
 
 #include "timer.h"
 #include "vector2.h"
@@ -19,15 +20,16 @@ const int screen_w = 640;
 const int screen_h = 480;
 bool pressed = false;
 
+//camera-- moves to right why dunno
 int camera_x = 0;
 int camera_y = 0;
 double camera_angle = 0.0;
 
 #define DEBUG 0
 
-void LOG(std::string where, std::string message) {
+void LOG(std::string where_, std::string message) {
 #if DEBUG
-	std::cout << "[" << where << "]" << " " << message << "\n";
+	std::cout << "[" << where_ << "]" << " " << message << "\n";
 #endif // DEBUG
 
 }
@@ -342,6 +344,7 @@ struct ParticleEmitter
 			}
 		}
 
+
 		for (auto& p : particles) {
 			p.update();
 		}
@@ -374,6 +377,7 @@ struct InputHandler
 	virtual void handle_input(GameObject& gameobject) = 0;
 
 	bool pressed[512]{false};
+	SDL_Scancode last_scancode;
 };
 
 struct AI
@@ -611,6 +615,7 @@ struct PlayerInputHandler : InputHandler
 
 			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_NONE;
+			last_scancode = SDL_SCANCODE_RIGHT;
 			pressed[SDL_SCANCODE_RIGHT] = true;
 		}
 		if (!kbstate[SDL_SCANCODE_RIGHT]) {
@@ -624,6 +629,7 @@ struct PlayerInputHandler : InputHandler
 			}
 			//hop(gameobject);
 			gameobject.flip = SDL_FLIP_HORIZONTAL;
+			last_scancode = SDL_SCANCODE_LEFT;
 			pressed[SDL_SCANCODE_LEFT] = true;
 		}
 		if (!kbstate[SDL_SCANCODE_LEFT]) {
@@ -636,6 +642,7 @@ struct PlayerInputHandler : InputHandler
 				camera_y += 32;
 			}
 			//camera_y += 32;
+			last_scancode = SDL_SCANCODE_UP;
 
 			pressed[SDL_SCANCODE_UP] = true;
 		}
@@ -649,6 +656,8 @@ struct PlayerInputHandler : InputHandler
 			if (gameobject.dst_camera.y > screen_h - 64) {
 				camera_y -= 32;
 			}
+
+			last_scancode = SDL_SCANCODE_DOWN;
 			pressed[SDL_SCANCODE_DOWN] = true;
 		}
 		if (!kbstate[SDL_SCANCODE_DOWN]) {
@@ -799,6 +808,32 @@ struct NormalBulletAI : AI {
 	SDL_RendererFlip orientation;
 };
 
+struct BoomerangBulletAI : AI{
+	BoomerangBulletAI(GameObject & player) :
+		v{10},
+		player{ player }
+	{
+		orientation = player.flip;
+	}
+
+	void update(GameObject & gameobject) override {
+		if (orientation == SDL_FLIP_NONE) {
+			gameobject.dst.x += v;
+			gameobject.angle += 3;
+		}
+		else {
+			gameobject.dst.x -= v;
+			gameobject.angle -= 3;
+		}
+
+
+	}
+
+	int v, starting_point;
+	GameObject& player;
+	SDL_RendererFlip orientation;
+};
+
 struct EnemySpawnerAI : AI {
 	EnemySpawnerAI(std::vector<GameObject>& enemy_vec, Uint32 respawn_interval, int min, int max) :
 		enemy_vec{ enemy_vec }, respawn_interval{ respawn_interval }, min{ min }, max{max}
@@ -842,9 +877,19 @@ struct NormalBombUpdateAI : AI {
 	Timer timer;
 };
 
+struct SideCollision
+{
+	SideCollision() : left{ false }, right{ false }, up{ false }, down{ false } {}
+	SideCollision(bool left, bool right, bool up, bool down)
+		: left{ left }, right{ right }, up{ up }, down{down}
+	{}
+	
+	bool left, right, up, down;
+};
+
 struct Physics
 {
-	bool Collision(GameObject& a, GameObject& b) {
+	bool collision(GameObject& a, GameObject& b) {
 		if (a.dst.x < b.dst.x + b.dst.w &&
 			a.dst.x + a.dst.w > b.dst.x &&
 			a.dst.y < b.dst.y + b.dst.h &&
@@ -856,7 +901,20 @@ struct Physics
 		return false;
 	}
 
-	std::string Collision_tag(GameObject& a, GameObject& b) {
+
+	bool collision(SDL_Rect& a, SDL_Rect& b) {
+		if (a.x < b.x + b.w &&
+			a.x + a.w > b.x &&
+			a.y < b.y + b.h &&
+			a.y + a.h > b.y)
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	std::string collision_tag(GameObject& a, GameObject& b) {
 		return b.tag;
 	}
 
@@ -880,9 +938,9 @@ struct Physics
 		return false;
 	}
 
-	GameObject* Collision(std::vector<GameObject>& group, GameObject& obj) {
+	GameObject* collision(std::vector<GameObject>& group, GameObject& obj) {
 		for (auto& g : group) {
-			if (Collision(g, obj)) {
+			if (collision(g, obj)) {
 				return &g;
 			}
 		}
@@ -890,16 +948,87 @@ struct Physics
 		return nullptr;
 	}
 
-	bool Collision(std::vector<GameObject>& group1, std::vector<GameObject>& group2) {
+	enum collsion_direction { LEFT, RIGHT, DOWN, UP };
+	//collsion_direction foresight(SDL_Rect &a, SDL_Rect& b) {
+	//	SDL_Rect ret_rct = {a.x,a.y,a.w,a.h};
+	//	
+	//	ret_rct.x += 32;
+	//
+	//	ret_rct.x -= 32;
+	//	ret_rct.y += 32;
+	//	ret_rct.y -= 32;
+	//	
+	//}
+
+	SideCollision pre_collision(GameObject& a, GameObject& b) {
+		SideCollision side_col{ };
+		
+		a.dst.x += 32;
+		if (collision(a.dst, b.dst)) {
+			a.dst.x -= 32;
+			side_col.left = true;
+		}
+
+		a.dst.x -= 32;
+		if (collision(a.dst, b.dst)) {
+			a.dst.x += 32;
+			side_col.right = true;
+		}
+
+		a.dst.y -= 32;
+		if (collision(a.dst, b.dst)) {
+			a.dst.y += 32;
+			side_col.up = true;
+		}
+
+		a.dst.y += 32;
+		if (collision(a.dst, b.dst)) {
+			a.dst.x -= 32;
+			side_col.down = true;
+		}
+
+		return side_col;
+	}
+
+	bool collision(std::vector<GameObject>& group1, std::vector<GameObject>& group2) {
 		for (auto& g1 : group1) {
 			for (auto& g2 : group2) {
-				if (Collision(g1, g2)) {
+				if (collision(g1, g2)) {
 					return true;
 				}
 			}
 		}
 
 		return false;
+	}
+
+	void wall_collision(GameObject& go1, std::vector<GameObject>& go2) {
+		for (auto& g : go2) {
+			if (go1.dst.x == g.dst.x && go1.dst.y == g.dst.y) {
+				//auto* ih = go1.input_handler.get();
+				switch (go1.input_handler->last_scancode) {
+				case SDL_SCANCODE_UP:
+					std::cout << "Up\n";
+					go1.dst.y += 32;
+					break;
+				case SDL_SCANCODE_DOWN:
+					std::cout << "Down\n";
+					go1.dst.y -= 32;
+					break;
+				case SDL_SCANCODE_LEFT:
+					go1.dst.x += 32;
+					std::cout << "Left\n";
+					break;
+				case SDL_SCANCODE_RIGHT:
+					go1.dst.x -= 32;
+					std::cout << "Right\n";
+					break;
+
+				default:
+					std::cout << "Nothing\n";
+				}
+			}
+		}
 	}
 };
 
@@ -939,6 +1068,10 @@ struct Level
 		things_to_protect.emplace_back(x, y, 32, 32, 41, 4, "gold");
 	}
 
+	void add_reference_tile(int x, int y) {
+		reference_tiles.emplace_back(x, y, 32, 32, random_between(1, 5),0, "r_tile");
+	}
+
 	void parse_map(std::string file_map_path) {
 		std::ifstream stream(file_map_path);
 		if (!stream) LOG("PARSE MAP", "error map file not found\n");
@@ -967,6 +1100,9 @@ struct Level
 					case '1':
 						add_wall(x, y);
 						break;
+					case '2':
+						add_reference_tile(x, y);
+						break;
 					case '0':
 						break;
 					default:
@@ -982,7 +1118,10 @@ struct Level
 		}
 	}
 
-	std::unique_ptr<State> update(){
+	std::unique_ptr<State> update() {
+
+		//fix sword, stop apperieng, somthing with the limit i gues
+		//or directly make it boomerang
 		for (auto& b : bullets) {
 			if (b.ai) b.ai->update(b);
 			if (physics.check_boundaries(b, screen_w * 3)) {
@@ -992,12 +1131,21 @@ struct Level
 
 		std::erase_if(bullets, [](GameObject& g) { return !g.active; });
 
+		//GameObject* obj = 
+		physics.wall_collision(player, walls);
+		//if (obj) {
+		//
+		//	player.dst.x = obj->dst.x+32;
+		//}
+
+	
+
 		for (auto& e : enemies) {
 			if (e.active) {
 				if (e.ai) e.ai->update(e);
 			}
 
-			GameObject* obj = physics.Collision(bullets, e);
+			GameObject* obj = physics.collision(bullets, e);
 			if (obj) {
 				obj->active = false;
 				e.active = false;
@@ -1008,7 +1156,7 @@ struct Level
 				}
 			};
 
-			GameObject* protectable = physics.Collision(things_to_protect, e);
+			GameObject* protectable = physics.collision(things_to_protect, e);
 			if (protectable) {
 				protectable->active = false;
 				//e.active = false;
@@ -1059,6 +1207,9 @@ struct Level
 	}
 
 	void draw() {
+		for (auto& r : reference_tiles) {
+			r.draw();
+		}
 		player.draw();
 		for (auto& e : enemies) {
 			e.draw();
@@ -1088,6 +1239,7 @@ struct Level
 	std::vector<GameObject> bombs;
 	std::vector<GameObject> walls;
 	std::vector<GameObject> enemy_spawners;
+	std::vector<GameObject> reference_tiles; //tiles that show that the player is moving
 	Timer enemy_spawn_timer; //this have to go in enemy spawner ai
 	Physics physics;
 };
@@ -1261,7 +1413,6 @@ int main(int argc, char* args[])
 		if (kbstate[SDL_SCANCODE_R]) {
 			camera_angle -= 5.0;
 		}
-
 		
 		if (kbstate[SDL_SCANCODE_D] && !pressed) {
 			pressed = true;
