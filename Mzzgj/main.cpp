@@ -147,7 +147,6 @@ struct SoundManager
 //particles////
 ///////////////
 
-
 struct Text
 {
 	Text(std::string text, int x, int y, int w, int h) : text{ text }, rct{ x,y,w,h }, color{ 255,255,255,255 } {
@@ -233,7 +232,7 @@ struct Particle
 		float gx, float gy) :
 		dst{ x,y,w,h },
 		src{ 16 * tx, 16 * ty, 16,16 },
-		dst_camera{x,y,w,h},
+		dst_camera{ x + camera_x,y + camera_y,w,h },
 		tx{ tx }, ty{ ty },
 		gx{ gx }, gy{ gy }, active{ true }, lifetime{ lifetime }
 	{
@@ -256,8 +255,14 @@ struct Particle
 		}
 	}
 
+	//here_goes
 	void draw() {
-		if (active) SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst, angle, NULL, SDL_FLIP_NONE);
+		if (active) {
+			dst_camera.x = dst.x + camera_x;
+			dst_camera.y = dst.y + camera_y;
+			SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst_camera, angle, NULL, SDL_FLIP_NONE);
+
+		}
 	}
 
 	Uint32 lifetime;
@@ -318,7 +323,7 @@ struct ParticleEmitter
 
 		this->x = x;
 		this->y = y;
-		std::cout << "start emitting: " << x << " - " << y << "\n";
+		//std::cout << "start emitting: " << x << " - " << y << "\n";
 		emitting = true;
 	}
 
@@ -383,16 +388,15 @@ struct EnemyParticleEmitter : ParticleEmitter {
 //TODO
 struct EnemyCrossParticleEmitter : ParticleEmitter {
 
-	EnemyCrossParticleEmitter() : ParticleEmitter(20, 20, 10, 10, 10, 15, 0.0f, -0.05f, 500)
+	EnemyCrossParticleEmitter() : ParticleEmitter(4, 4, 10, 10, 10, 15, 0.0f, -0.05f, 500)
 	{
 		
 	}
 
 	void push_particle() override {
 		if (particles.size() < MAX_PARTICLES) {
-			float _gy = random_betweenf(-0.1f, 0.1f);
-			float _gx = random_betweenf(-0.1f, 0.3f);
-			std::cout << "here: " << random_between(0, 1)  << "\n";
+			float _gy = random_betweenf(-0.1f, 0.3f );
+			float _gx = random_betweenf(-0.1f, 0.1f);
 			random_between(0, 2) == 0 ? _gx = 0.0f : _gy = 0.0f;
 			particles.emplace_back(
 				random_between(x - range_x, x + range_x),
@@ -513,25 +517,34 @@ struct Button
 	Button(int x, int y, int w, int h, std::string text, int margin) :
 		rct{x,y,w,h}, text{text,x+margin,y+margin,w-margin*2,h-margin*2},
 		text_str{text},
-		selected{false}
+		selected{false},
+		color{255,0,0,255}
 	{
 		std::cout << "buttoin created: " <<  x << "-" << y << "-" << w << "-" << h << "-" << margin << "\n";
+		
 	}
 
 	void draw() {
-		SDL_SetRenderDrawColor(SDL::Context::renderer, 255,0,0,0);
+		SDL_SetRenderDrawColor(SDL::Context::renderer, color.r,color.g,color.b,color.a);
 		SDL_RenderFillRect(SDL::Context::renderer, &rct);
 		SDL_SetRenderDrawColor(SDL::Context::renderer, 255, 255, 255, 255);
 		text.render();
 	}
 
 	bool handle_input() {
-		if (SDL_GetMouseState(&mx, &my)  & SDL_BUTTON(SDL_BUTTON_LEFT)) {
-			if (mx > rct.x && mx<rct.x + rct.w
-				&& my > rct.y && my < rct.y + rct.h) {
-				return true;
-			}
+		mx = SDL::Context::event.button.x;
+		my = SDL::Context::event.button.y;
+
+		//std::cout << x << "\n";
+		if (mx > rct.x && mx<rct.x + rct.w
+			&& my > rct.y && my < rct.y + rct.h) {
+			
+			color.r = 0;
+			if(SDL_GetMouseState(&mx, &my) && SDL_BUTTON(SDL_BUTTON_LEFT)) return true;
+		} else {
+			color.r = 255;
 		}
+		
 
 		return false;
 	}
@@ -542,6 +555,7 @@ struct Button
 	Text text;
 	bool selected;
 	int mx{0}, my{ 0 };
+	SDL_Color color;
 };
 
 struct Menu
@@ -981,7 +995,7 @@ struct Physics
 	}
 
 	bool check_boundaries(GameObject& a, int max_x) {
-		std::cout << a.dst.x << " - " << a.dst.y << "\n";
+		//std::cout << a.dst.x << " - " << a.dst.y << "\n";
 
 		if (a.dst.x < 0 || a.dst.x + a.dst.w > max_x) {
 			return true;
@@ -1203,7 +1217,7 @@ struct Level
 				e.active = false;
 				if (e.emitter) {
 					if (!e.emitter->emitting) {
-						e.emitter->emit(e.dst_camera.x, e.dst_camera.y, 2000);
+						e.emitter->emit(e.dst.x, e.dst.y, 2000);
 					}
 				}
 			};
