@@ -322,34 +322,9 @@ struct ParticleEmitter
 		emitting = true;
 	}
 
-	void push_particle() {
-		if (particles.size() < MAX_PARTICLES) {
-			particles.emplace_back(
-				random_between(x - range_x, x + range_x),
-				random_between(y - range_y, y + range_y),
-				random_between(min_w, max_w),
-				random_between(min_h, max_h),
-				15, 10,
-				lifetime, gx, gy);
-		}
-	}
+	virtual void push_particle() = 0;
 
-	void update() {
-		if (emitting) {
-			push_particle();
-			if (life.getTicks() > emitter_lifetime) {
-				emitting = false;
-				finished = true;
-				life.stop();
-			}
-		}
-
-
-		for (auto& p : particles) {
-			p.update();
-		}
-		std::erase_if(particles, [](Particle& p) { return !p.active; });
-	}
+	virtual void update() = 0;
 
 	void draw() {
 		for (auto& p : particles) {
@@ -369,6 +344,83 @@ struct ParticleEmitter
 	bool finished;
 };
 
+struct EnemyParticleEmitter : ParticleEmitter {
+
+	EnemyParticleEmitter() : ParticleEmitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500)
+	{
+	}
+
+	void push_particle() override {
+		if (particles.size() < MAX_PARTICLES) {
+			particles.emplace_back(
+				random_between(x - range_x, x + range_x),
+				random_between(y - range_y, y + range_y),
+				random_between(min_w, max_w),
+				random_between(min_h, max_h),
+				15, 10,
+				lifetime, gx, gy);
+		}
+	}
+
+	void update() override {
+		if (emitting) {
+			push_particle();
+			if (life.getTicks() > emitter_lifetime) {
+				emitting = false;
+				finished = true;
+				life.stop();
+			}
+		}
+
+
+		for (auto& p : particles) {
+			p.update();
+		}
+		std::erase_if(particles, [](Particle& p) { return !p.active; });
+	}
+};
+
+//TODO
+struct EnemyCrossParticleEmitter : ParticleEmitter {
+
+	EnemyCrossParticleEmitter() : ParticleEmitter(20, 20, 10, 10, 10, 15, 0.0f, -0.05f, 500)
+	{
+		
+	}
+
+	void push_particle() override {
+		if (particles.size() < MAX_PARTICLES) {
+			float _gy = random_betweenf(-0.1f, 0.1f);
+			float _gx = random_betweenf(-0.1f, 0.3f);
+			std::cout << "here: " << random_between(0, 1)  << "\n";
+			random_between(0, 2) == 0 ? _gx = 0.0f : _gy = 0.0f;
+			particles.emplace_back(
+				random_between(x - range_x, x + range_x),
+				random_between(y - range_y, y + range_y),
+				random_between(min_w, max_w),
+				random_between(min_h, max_h),
+				15, 10,
+				lifetime, _gx, _gy);
+		}
+	}
+
+	void update() override {
+		if (emitting) {
+			push_particle();
+			if (life.getTicks() > emitter_lifetime) {
+				emitting = false;
+				finished = true;
+				life.stop();
+			}
+		}
+
+
+		for (auto& p : particles) {
+			p.update();
+		}
+		std::erase_if(particles, [](Particle& p) { return !p.active; });
+	}
+};
 
 struct GameObject;
 
@@ -573,7 +625,7 @@ struct EnemyDeathEmitter : Emitter
 		//auto e = std::make_unique<ParticleEmitter>( 10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
 		//emitter = std::move(e);
 
-		emitter = new ParticleEmitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
+		//emitter = new ParticleEmitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
 	}
 
 	void emit() override {
@@ -845,7 +897,7 @@ struct EnemySpawnerAI : AI {
 		auto& e = enemy_vec.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
 		//randomize ai
 		e.set_ai(std::make_unique<EnemyMoveRandomlyAI>());
-		e.set_emitter(std::make_unique<ParticleEmitter>(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500));
+		e.set_emitter(std::make_unique<EnemyCrossParticleEmitter>());
 	}
 
 	void update(GameObject& gameobject) override {
