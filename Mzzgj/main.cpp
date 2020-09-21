@@ -422,6 +422,7 @@ struct EnemyCrossParticleEmitter : ParticleEmitter {
 		for (auto& p : particles) {
 			p.update();
 		}
+
 		std::erase_if(particles, [](Particle& p) { return !p.active; });
 	}
 };
@@ -661,12 +662,18 @@ struct PlayerInputHandler : InputHandler
 			//gameobject.dst.y += 2;
 			//gameobject.angle += 12;
 			hoping = true;
+			//gameobject.angle += _hoping;
+			//_hoping * -1;
 		}
 		else {
 			//gameobject.dst.y -= 2;
 			//gameobject.angle -= 12;
 			hoping = false;
 		}
+
+		gameobject.angle += _hoping;
+		_hoping *= -1;
+
 	}
 
 	void handle_input(GameObject& gameobject) {
@@ -679,7 +686,8 @@ struct PlayerInputHandler : InputHandler
 				camera_x -= 32;
 			}
 
-			//hop(gameobject);
+
+			hop(gameobject);
 			gameobject.flip = SDL_FLIP_NONE;
 			last_scancode = SDL_SCANCODE_RIGHT;
 			pressed[SDL_SCANCODE_RIGHT] = true;
@@ -693,7 +701,7 @@ struct PlayerInputHandler : InputHandler
 			if (gameobject.dst_camera.x < 64) {
 				camera_x += 32;
 			}
-			//hop(gameobject);
+			hop(gameobject);
 			gameobject.flip = SDL_FLIP_HORIZONTAL;
 			last_scancode = SDL_SCANCODE_LEFT;
 			pressed[SDL_SCANCODE_LEFT] = true;
@@ -709,6 +717,8 @@ struct PlayerInputHandler : InputHandler
 			}
 			//camera_y += 32;
 			last_scancode = SDL_SCANCODE_UP;
+			hop(gameobject);
+
 
 			pressed[SDL_SCANCODE_UP] = true;
 		}
@@ -723,6 +733,7 @@ struct PlayerInputHandler : InputHandler
 				camera_y -= 32;
 			}
 
+			hop(gameobject);
 			last_scancode = SDL_SCANCODE_DOWN;
 			pressed[SDL_SCANCODE_DOWN] = true;
 		}
@@ -749,6 +760,7 @@ struct PlayerInputHandler : InputHandler
 	}
 
 	bool hoping = false;
+	float _hoping = -15.0f;
 	bool shooting = false;
 };
 
@@ -865,8 +877,6 @@ struct NormalBulletAI : AI {
 			gameobject.dst.x -= v;
 			gameobject.angle -= 3;
 		}
-
-
 	}
 
 	int v;
@@ -1337,14 +1347,19 @@ struct PlayingState : State
 
 struct IntroState : State
 {
-	IntroState() : intro{ "PROTECT THE GOLD", screen_w / 2, screen_h / 2, 50, {255,125,0,0} }
+	IntroState() : 
+		gameName{ "A GAME", screen_w / 2, screen_h / 2, 50, {255,125,0,0} },
+		levelName{ "LEVEL 1: PROTECT THE GOLD", screen_w / 2, screen_h / 2, 50, {255,125,0,0} }
 	{
 		timer.start();
 		limit = 1000 * 10;
 		music_channel = SoundManager::play_for_seconds("hipintro", limit);
 
-		intro.rct.x = screen_w / 2 - intro.rct.w / 2;
-		intro.rct.y = screen_h / 2 - intro.rct.h / 2;
+		gameName.rct.x = 25;
+		gameName.rct.y = 25;
+
+		levelName.rct.x = 25;
+		levelName.rct.y = 350;
 	}
 
 	std::unique_ptr<State> update() override {
@@ -1366,10 +1381,11 @@ struct IntroState : State
 	}
 
 	void draw() override {
-		intro.render();
+		gameName.render();
+		levelName.render();
 	}
 
-	Text intro;
+	Text gameName, levelName;
 	Timer timer;
 	int limit, music_channel;
 };
@@ -1441,12 +1457,6 @@ int main(int argc, char* args[])
 	SoundManager sound; // a donde meto esto, no static?
 
 	GameObject g(250,250,64,64,10,10,"tag");
-
-	//ParticleEmitter emitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
-	//emitter.emit(x, y, 4000);
-	//emitter.update();
-	//emitter.draw();
-
 
 	while (running) {
 
