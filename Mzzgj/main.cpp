@@ -800,6 +800,47 @@ struct EnemyChaseTargetAI : AI {
 	int vx, vy, v;
 };
 
+struct EnemyChaseTargetTimedAI : AI {
+	EnemyChaseTargetTimedAI(GameObject& target) :
+		target{ target },
+		v{ 32 }, vx{ v }, vy{ v }, walk_interval {1200}{
+		
+		walking_timer.start();
+	}
+
+	void update(GameObject& gameobject) override {
+		if (target.dst.x > gameobject.dst.x) {
+			vx = v;
+		}
+
+		if (target.dst.x < gameobject.dst.x) {
+			vx = -v;
+		}
+
+		if (target.dst.y > gameobject.dst.y) {
+			vy = v;
+		}
+
+
+		if (target.dst.y < gameobject.dst.y) {
+			vy = -v;
+		}
+
+		if (walking_timer.getTicks() >= walk_interval) {
+			gameobject.dst.x += vx;
+			gameobject.dst.y += vy;
+			walking_timer.stop();
+			walking_timer.start();
+		}
+	}
+
+	GameObject& target;
+	int vx, vy, v;
+	Timer walking_timer;
+	Uint32 walk_interval;
+};
+
+
 struct EnemyGoToTheGoldAI : AI {
 	EnemyGoToTheGoldAI(GameObject& target) :
 		target{ target },
@@ -820,6 +861,8 @@ struct EnemyGoToTheGoldAI : AI {
 
 	GameObject& target;
 	int vx, vy, v;
+	Timer walking_timer;
+	Uint32 walk_interval;
 };
 
 struct EnemyMoveRandomlyAI : AI {
@@ -844,6 +887,39 @@ struct EnemyMoveRandomlyAI : AI {
 	}
 
 	int v, vx, vy;
+};
+
+struct EnemyMoveRandomlyTimedAI : AI {
+	EnemyMoveRandomlyTimedAI() : v{ 32 }, vx{ v }, vy{ v }, walk_interval{ 300 }{
+
+		walking_timer.start();
+	}
+
+	void update(GameObject& gameobject) override {
+		
+		if (gameobject.dst.y > screen_h) {
+			vy = -v;
+		}
+		if (gameobject.dst.y < 0) {
+			vy = v;
+		}
+		if (gameobject.dst.x > screen_w) {
+			vx = -v;
+		}
+		if (gameobject.dst.y < 0) {
+			vx = v;
+		}
+		if (walking_timer.getTicks() >= walk_interval) {
+			gameobject.dst.x += vx;
+			gameobject.dst.y += vy;
+			walking_timer.stop();
+			walking_timer.start();
+		}
+	}
+
+	int v, vx, vy;
+	Timer walking_timer;
+	Uint32 walk_interval;
 };
 
 struct NormalBulletAI : AI {
@@ -901,8 +977,6 @@ struct BoomerangBulletAI : AI{
 			gameobject.dst.x -= v;
 			gameobject.angle -= 3;
 		}
-
-
 	}
 
 	int v, starting_point;
@@ -920,7 +994,7 @@ struct EnemySpawnerAI : AI {
 	void add_enemy(int x, int y) {
 		auto& e = enemy_vec.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
 		//randomize ai
-		e.set_ai(std::make_unique<EnemyMoveRandomlyAI>());
+		e.set_ai(std::make_unique<EnemyMoveRandomlyTimedAI>());
 		e.set_emitter(std::make_unique<EnemyCrossParticleEmitter>());
 	}
 
