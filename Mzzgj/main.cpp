@@ -890,7 +890,7 @@ struct EnemyMoveRandomlyAI : AI {
 };
 
 struct EnemyMoveRandomlyTimedAI : AI {
-	EnemyMoveRandomlyTimedAI() : v{ 32 }, vx{ v }, vy{ v }, walk_interval{ 300 }{
+	EnemyMoveRandomlyTimedAI() : v{ 32 }, vx{ v }, vy{ v }, walk_interval{ 700 }{
 
 		walking_timer.start();
 	}
@@ -912,6 +912,9 @@ struct EnemyMoveRandomlyTimedAI : AI {
 		if (walking_timer.getTicks() >= walk_interval) {
 			gameobject.dst.x += vx;
 			gameobject.dst.y += vy;
+			if (random_between(0, 7) == 0) vx = -v;
+			if (random_between(0, 7) == 0) vy = -v;
+
 			walking_timer.stop();
 			walking_timer.start();
 		}
@@ -1184,8 +1187,9 @@ struct Physics
 
 struct Level
 {
-	Level() :
-		player{ 0,0,32,32,29,0, "player" }
+	Level(std::string map) :
+		player{ 0,0,32,32,29,0, "player" },
+		enemies_killed{ 0 }
 	{
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
 		
@@ -1200,9 +1204,10 @@ struct Level
 		walls.reserve(100);
 		enemy_spawners.reserve(20);
 
-		parse_map("map_test");
+		parse_map(map);
 
 		enemy_spawn_timer.start();
+		levelTimer.start();
 	}
 
 	void add_enemy_spawner(int x, int y) {
@@ -1268,7 +1273,7 @@ struct Level
 		}
 	}
 
-	std::unique_ptr<State> update() {
+	void base_update() {
 
 		//fix sword, stop apperieng, somthing with the limit i gues
 		//or directly make it boomerang
@@ -1299,6 +1304,10 @@ struct Level
 			if (obj) {
 				obj->active = false;
 				e.active = false;
+				if (!e.active) {
+					enemies_killed++;
+					std::cout << enemies_killed << "\n";
+				}
 				if (e.emitter) {
 					if (!e.emitter->emitting) {
 						e.emitter->emit(e.dst.x, e.dst.y, 2000);
@@ -1314,7 +1323,7 @@ struct Level
 			if (e.emitter) e.emitter->update();
 		}
 
-		std::erase_if(enemies, [](GameObject& g) {
+		std::erase_if(enemies, [&](GameObject& g) {
 			if (!g.emitter) {
 				return !g.active;
 			}
@@ -1327,10 +1336,11 @@ struct Level
 			es.ai->update(es);
 		}
 
-		return nullptr;
 	}
 
-	std::unique_ptr<State> handle_input(){
+	virtual std::unique_ptr<State> update() = 0;
+	
+	void base_handle_input(){
 		if (player.input_handler) player.input_handler->handle_input(player);
 
 		//my senses say that this is not okay
@@ -1349,12 +1359,12 @@ struct Level
 		}
 
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
-		if (kbstate[SDL_SCANCODE_ESCAPE]) {
-			return std::make_unique<MenuState>();
-		}
+		//if (kbstate[SDL_SCANCODE_ESCAPE]) {
+		//	return std::make_unique<MenuState>();
+		//}
 
-		return nullptr;
 	}
+	virtual std::unique_ptr<State> handle_input() = 0;
 
 	void draw() {
 		for (auto& r : reference_tiles) {
@@ -1392,31 +1402,52 @@ struct Level
 	std::vector<GameObject> reference_tiles; //tiles that show that the player is moving
 	Timer enemy_spawn_timer; //this have to go in enemy spawner ai
 	Physics physics;
+	Timer levelTimer;
+	int enemies_killed;
 };
 
-struct PlayingState : State
+struct LevelOne : Level
 {
-	PlayingState() : level{} {
+	LevelOne() : Level{"level1"} {
 		
 	}
 
-	std::unique_ptr<State> update() override {
-		level.update();
+	std::unique_ptr<State> update() override{
+		base_update();
+
+
+
 		return nullptr;
 	}
 
 	std::unique_ptr<State> handle_input() override {
-		level.handle_input();
+		base_handle_input();
+
+		return nullptr;
+	}
+};
+
+struct PlayingState : State
+{
+	PlayingState() : level{ std::make_unique<LevelOne>() } {
+		
+	}
+
+	std::unique_ptr<State> update() override {
+		if(level) level->update();
+		return nullptr;
+	}
+
+	std::unique_ptr<State> handle_input() override {
+		if(level) level->handle_input();
 		return nullptr;
 	}
 
 	void draw() override {
-		level.draw();
+		if(level) level->draw();
 	}
 
-	//std::unique_ptr<State>
-	Level level;
-
+	std::unique_ptr<Level> level;
 };
 
 struct IntroState : State
