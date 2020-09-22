@@ -1403,8 +1403,93 @@ struct Level
 	Timer enemy_spawn_timer; //this have to go in enemy spawner ai
 	Physics physics;
 	Timer levelTimer;
-	int enemies_killed;
+	int enemies_killed,coins_left;
 };
+
+struct LostState : State
+{
+	LostState() :
+		msg{ "YOU LOST", screen_w / 2, screen_h / 2, 50, {255,125,0,0} }
+	{
+		timer.start();
+		limit = 1000 * 10;
+		music_channel = SoundManager::play_for_seconds("hipintro", limit);
+
+		msg.rct.y = 25;
+		msg.rct.y = 350;
+	}
+
+	std::unique_ptr<State> update() override {
+		if (timer.getTicks() >= limit) {
+			timer.stop();
+			//return std::make_unique<PlayingState>();
+		}
+
+		return nullptr;
+	}
+
+	std::unique_ptr<State> handle_input() override {
+		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
+		if (kbstate[SDL_SCANCODE_SPACE]) {
+			timer.stop();
+			SoundManager::shut_up_channel(music_channel);
+			//return std::make_unique<PlayingState>();
+		}
+
+		return nullptr;
+	}
+
+	void draw() override {
+		msg.render();
+	}
+
+	Text msg;
+	Timer timer;
+	int limit, music_channel;
+};
+
+struct WonState : State
+{
+	WonState() :
+		msg{ "YOU WON", screen_w / 2, screen_h / 2, 50, {255,125,0,0} }
+	{
+		timer.start();
+		limit = 1000 * 10;
+		music_channel = SoundManager::play_for_seconds("hipintro", limit);
+
+		msg.rct.y = 25;
+		msg.rct.y = 350;
+	}
+
+	std::unique_ptr<State> update() override {
+		if (timer.getTicks() >= limit) {
+			timer.stop();
+			//return std::make_unique<PlayingState>();
+		}
+
+		return nullptr;
+	}
+
+	std::unique_ptr<State> handle_input() override {
+		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
+		if (kbstate[SDL_SCANCODE_SPACE]) {
+			timer.stop();
+			SoundManager::shut_up_channel(music_channel);
+			//return std::make_unique<PlayingState>();
+		}
+
+		return nullptr;
+	}
+
+	void draw() override {
+		msg.render();
+	}
+
+	Text msg;
+	Timer timer;
+	int limit, music_channel;
+};
+
 
 struct LevelOne : Level
 {
@@ -1415,7 +1500,9 @@ struct LevelOne : Level
 	std::unique_ptr<State> update() override{
 		base_update();
 
-
+		if (enemies_killed >= 10) {
+			return std::make_unique<WonState>();
+		}
 
 		return nullptr;
 	}
@@ -1434,13 +1521,13 @@ struct PlayingState : State
 	}
 
 	std::unique_ptr<State> update() override {
-		if(level) level->update();
-		return nullptr;
+		if(level) return level->update();
+		//return nullptr;
 	}
 
 	std::unique_ptr<State> handle_input() override {
-		if(level) level->handle_input();
-		return nullptr;
+		if(level) return level->handle_input();
+		//return nullptr;
 	}
 
 	void draw() override {
@@ -1494,6 +1581,7 @@ struct IntroState : State
 	Timer timer;
 	int limit, music_channel;
 };
+
 
 std::unique_ptr<State> MenuState::handle_input(){
 	switch (menu.handle_input()) {
