@@ -29,14 +29,16 @@
 #include "GameObject.h"
 #include "Menu.h"
 
+#include "Camera.h"
+
 const int screen_w = 640;
 const int screen_h = 480;
 bool pressed = false;
 
 //camera-- moves to right why dunno
-int camera_x = 0;
-int camera_y = 0;
-double camera_angle = 0.0;
+//int camera_x = 0;
+//int camera_y = 0;
+//double camera_angle = 0.0;
 
 #define DEBUG 0
 
@@ -153,7 +155,6 @@ struct MenuState : State
 	Menu menu;
 };
 
-
 struct PlayerInputHandler : InputHandler
 {
 	void hop(GameObject& gameobject) {
@@ -175,6 +176,7 @@ struct PlayerInputHandler : InputHandler
 
 	}
 
+
 	void handle_input(GameObject& gameobject) {
 		const Uint8* kbstate = SDL_GetKeyboardState(NULL);
 
@@ -182,7 +184,7 @@ struct PlayerInputHandler : InputHandler
 		if (kbstate[SDL_SCANCODE_RIGHT] && !pressed[SDL_SCANCODE_RIGHT]) {
 			gameobject.dst.x += 32;
 			if (gameobject.dst_camera.x > screen_w-64) {
-				camera_x -= 32;
+				Camera::camera_x -= 32;
 			}
 
 
@@ -198,7 +200,7 @@ struct PlayerInputHandler : InputHandler
 		if (kbstate[SDL_SCANCODE_LEFT] && !pressed[SDL_SCANCODE_LEFT]) {
 			gameobject.dst.x -= 32;
 			if (gameobject.dst_camera.x < 64) {
-				camera_x += 32;
+				Camera::camera_x += 32;
 			}
 			hop(gameobject);
 			gameobject.flip = SDL_FLIP_HORIZONTAL;
@@ -212,7 +214,7 @@ struct PlayerInputHandler : InputHandler
 		if (kbstate[SDL_SCANCODE_UP] && !pressed[SDL_SCANCODE_UP]) {
 			gameobject.dst.y -= 32;
 			if (gameobject.dst_camera.y < 64) {
-				camera_y += 32;
+				Camera::camera_y += 32;
 			}
 			//camera_y += 32;
 			last_scancode = SDL_SCANCODE_UP;
@@ -229,7 +231,7 @@ struct PlayerInputHandler : InputHandler
 			gameobject.dst.y += 32;
 
 			if (gameobject.dst_camera.y > screen_h - 64) {
-				camera_y -= 32;
+				Camera::camera_y -= 32;
 			}
 
 			hop(gameobject);
@@ -497,7 +499,7 @@ struct EnemySpawnerAI : AI {
 		auto& e = enemy_vec.emplace_back(x, y, 32, 32, Helpers::Random::random_between(25, 32), 6, "enemy");
 		//randomize ai
 		e.set_ai(std::make_unique<EnemyMoveRandomlyTimedAI>());
-		e.set_emitter(std::make_unique<EnemyCrossParticleEmitter>());
+		e.set_emitter(std::make_unique<EnemyParticleEmitter>());
 	}
 
 	void update(GameObject& gameobject) override {
@@ -690,6 +692,7 @@ struct Level
 		player{ 0,0,32,32,29,0, "player" },
 		enemies_killed{ 0 }
 	{
+		
 		player.set_input_handler(std::make_unique<PlayerInputHandler>());
 		
 		//camera_x = 32*30;
@@ -745,10 +748,10 @@ struct Level
 						break;
 					case 'P':
 						player.dst.x = x;
-						camera_x = -(player.dst.x);
+						Camera::camera_x = -(player.dst.x);
 
 						player.dst.y = y;
-						camera_y = -(player.dst.y);
+						Camera::camera_y = -(player.dst.y);
 						break;
 
 					case '1':
@@ -1158,26 +1161,26 @@ int main(int argc, char* args[])
 		}
 
 		if (kbstate[SDL_SCANCODE_L]) {
-			camera_x += 32;
+			Camera::camera_x += 32;
 		}
 
 		if (kbstate[SDL_SCANCODE_K]) {
-			camera_y -= 32;
+			Camera::camera_y -= 32;
 		}
 
 		if (kbstate[SDL_SCANCODE_J]) {
-			camera_x -= 32;
+			Camera::camera_x -= 32;
 		}
 
 		if (kbstate[SDL_SCANCODE_I]) {
-			camera_y += 32;
+			Camera::camera_y += 32;
 		}
 
 		if (kbstate[SDL_SCANCODE_T]) {
-			camera_angle += 5.0;
+			Camera::camera_angle += 5.0;
 		}
 		if (kbstate[SDL_SCANCODE_R]) {
-			camera_angle -= 5.0;
+			Camera::camera_angle -= 5.0;
 		}
 		
 		if (kbstate[SDL_SCANCODE_D] && !pressed) {
