@@ -11,7 +11,6 @@
 #include <sstream>
 #include <random>
 #include <unordered_map>
-#include <random>
 
 #include "timer.h"
 #include "vector2.h"
@@ -87,60 +86,6 @@ namespace SDL {
 		SDL_Window* window = NULL;
 	};
 }
-
-struct SoundManager
-{
-	SoundManager() {
-		//chuncks.reserve(10);
-
-		load("wilhelm", "wilhelm.wav");
-		load("guitarintro", "guitarintro.wav");
-		load("hipintro", "hipintro.wav");
-		load("sword", "sword.wav");
-
-		//chuncks.push_back(m);
-	}
-
-	void load(std::string name, std::string path) {
-		auto load_audio = [](std::string file_path) {
-			Mix_Chunk* m = Mix_LoadWAV(file_path.c_str());
-			if (!m) std::cout << "error loading audio "  << file_path << "\n";
-			return m;
-		};
-
-		chunks[name] = load_audio(path);
-	}
-
-	~SoundManager() {
-		for (auto c : chunks) {
-			Mix_FreeChunk(c.second);
-		}
-	}
-
-	static void play_chunk(std::string sound) {
-		Mix_PlayChannel(-1, chunks[sound], 0);
-	}
-
-	static int play_loop_chunk(std::string sound) {
-		return Mix_PlayChannel(-1, chunks[sound], -1);
-	}
-
-	static void shut_up_channel(int channel) {
-		Mix_HaltChannel(channel);
-	}
-
-	static int play_for_seconds(std::string sound, int ms) {
-		return Mix_PlayChannelTimed(-1, chunks[sound], -1, ms);
-	}
-
-	static void play_music(std::string sound) {
-
-	}
-
-	//std::vector<> chuncks;
-
-	static std::unordered_map<std::string, Mix_Chunk*> chunks;
-};
 
 
 ///////////////
@@ -223,7 +168,7 @@ SDL_Renderer* SDL::Context::renderer = NULL;
 SDL_Event SDL::Context::event;
 SDL_Texture* Assets::Sheet::texture = NULL;
 TTF_Font* SDL::Context::font = NULL;
-std::unordered_map<std::string, Mix_Chunk*> SoundManager::chunks;
+
 
 
 struct Particle
