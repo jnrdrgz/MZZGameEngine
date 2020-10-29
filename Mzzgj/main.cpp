@@ -15,6 +15,20 @@
 #include "timer.h"
 #include "vector2.h"
 
+#include "SoundManager.h"
+#include "Helpers.h"
+#include "AssetsManager.h"
+#include "SDL_Context.h"
+#include "Text.h"
+#include "components/ParticleEmitter.h"
+#include "components/AI.h"
+#include "components/InputHandler.h"
+#include "components/Animation.h"
+#include "components/State.h"
+
+#include "GameObject.h"
+#include "Menu.h"
+
 const int screen_w = 640;
 const int screen_h = 480;
 bool pressed = false;
@@ -33,267 +47,6 @@ void LOG(std::string where_, std::string message) {
 
 }
 
-//helpers
-int random_between(int mn, int mx) {
-	if (mn == mx) return mn;
-	int n = rand() % (mx - mn) + mn;
-	return n;
-}
-
-float random_betweenf(float min, float max) {
-	float scale = rand() / (float)RAND_MAX; // [0, 1.0] 
-	return min + scale * (max - min);      // [min, max]
-}
-
-namespace SDL {
-	struct Context
-	{
-	public:
-		Context(const char* title) {
-			SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
-			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
-			SDL_SetHint("SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH", "0");
-			
-			window = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, screen_w, screen_h, SDL_WINDOW_SHOWN);
-			renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-			SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-			TTF_Init();
-			IMG_Init(IMG_INIT_PNG);
-			Mix_OpenAudio( 44100, MIX_DEFAULT_FORMAT, 2, 2048 );
-			
-			font = TTF_OpenFont("umeboshi.ttf", 25);
-			if (!font) {
-				std::cout << "error loading font\n";
-			}
-		}
-
-		 ~Context() {
-			SDL_DestroyWindow(window);
-			SDL_DestroyRenderer(renderer);
-			Mix_Quit();
-			IMG_Quit();
-			TTF_Quit();
-			SDL_Quit();
-		}
-
-		static SDL_Renderer* renderer;
-		static TTF_Font* font;
-		static SDL_Event event;
-		bool running = false;
-
-	private:
-		SDL_Window* window = NULL;
-	};
-}
-
-
-///////////////
-//particles////
-///////////////
-
-struct Text
-{
-	Text(std::string text, int x, int y, int w, int h) : text{ text }, rct{ x,y,w,h }, color{ 255,255,255,255 } {
-		load_text();
-	}
-
-	Text(std::string text, int x, int y, int w, int h, SDL_Color color) : text{ text }, rct{ x,y,w,h }, color{ color } {
-		load_text();
-	}
-
-	Text(std::string text, int x, int y, int h) : text{ text }, color{ 255,255,255,255 }{
-		load_text_and_rct(x,y,h);
-	}
-
-	Text(std::string text, int x, int y, int h, SDL_Color color) : text{ text }, color{ color }{
-		load_text_and_rct(x, y, h);
-	}
-
-	~Text() {
-		std::cout << "Destrcutr called\n";
-		SDL_DestroyTexture(texture);
-	}
-
-	void load_text() {
-		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), color);
-		texture = SDL_CreateTextureFromSurface(SDL::Context::renderer, tmp_sur);
-		SDL_FreeSurface(tmp_sur);
-	}
-
-	void load_text_and_rct(int x, int y,int h) {
-		SDL_Surface* tmp_sur = TTF_RenderUTF8_Solid(SDL::Context::font, text.c_str(), color);
-		texture = SDL_CreateTextureFromSurface(SDL::Context::renderer, tmp_sur);
-
-		rct.x = x;
-		rct.y = y;
-		rct.w = tmp_sur->w;
-		rct.h = h;
-
-		SDL_FreeSurface(tmp_sur);
-	}
-
-	void update(std::string text) {
-		SDL_DestroyTexture(texture);
-		this->text = text;
-		load_text();
-	}
-
-	void render() {
-		SDL_RenderCopy(SDL::Context::renderer, texture, nullptr, &rct);
-	}
-
-	std::string text;
-	SDL_Texture* texture;
-	SDL_Rect rct;
-
-	SDL_Color color;
-};
-
-namespace Assets {
-	struct Sheet
-	{
-		Sheet() {
-			SDL_Surface* tmp_srf = IMG_Load("sheet.png");
-			if (!tmp_srf) std::cout << "error creating srf\n";
-			texture = SDL_CreateTextureFromSurface(SDL::Context::renderer, tmp_srf);
-			if (!texture) std::cout << "error creating texture\n";
-		}
-
-		static SDL_Texture* texture;
-	};
-}
-
-SDL_Renderer* SDL::Context::renderer = NULL;
-SDL_Event SDL::Context::event;
-SDL_Texture* Assets::Sheet::texture = NULL;
-TTF_Font* SDL::Context::font = NULL;
-
-
-
-struct Particle
-{
-	Particle(int x, int y, int w, int h, int tx, int ty, Uint32 lifetime,
-		float gx, float gy) :
-		dst{ x,y,w,h },
-		src{ 16 * tx, 16 * ty, 16,16 },
-		dst_camera{ x + camera_x,y + camera_y,w,h },
-		tx{ tx }, ty{ ty },
-		gx{ gx }, gy{ gy }, active{ true }, lifetime{ lifetime }
-	{
-		angle = 0.0f;
-		life.start();
-	}
-
-	void update() {
-		ax += gx;
-		ay += gy;
-		vx += ax;
-		vy += ay;
-
-		dst.x += (int)vx;
-		dst.y += (int)vy;
-
-		if (life.getTicks() >= lifetime) {
-			//std::cout << "life ended\n";
-			active = false;
-		}
-	}
-
-	//here_goes
-	void draw() {
-		if (active) {
-			dst_camera.x = dst.x + camera_x;
-			dst_camera.y = dst.y + camera_y;
-			SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst_camera, angle, NULL, SDL_FLIP_NONE);
-
-		}
-	}
-
-	Uint32 lifetime;
-	Timer life;
-	SDL_Rect src, dst, dst_camera;
-	float gx, gy, ax{ 0.0f }, ay{ 0.0f }, vx{ 0.0f }, vy{ 0.0f }, angle{ 0.0f };
-	bool gdown, active;
-	int tx, ty;
-};
-
-//particles
-struct ParticleEmitter
-{
-	ParticleEmitter() : MAX_PARTICLES{ 200 } {
-		particles.reserve(MAX_PARTICLES);
-	}
-
-	ParticleEmitter(int range_x, int range_y,
-		int min_w, int max_w, int min_h, int max_h,
-		int tx, int ty, float gx, float gy, Uint32 lifetime)
-		: range_x{ range_x }, range_y{ range_y },
-		min_w{ min_w }, max_w{ max_w }, min_h{ min_h }, max_h{ max_h },
-		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime }, finished{ false },
-		MAX_PARTICLES{ 200 } {
-
-
-		particles.reserve(MAX_PARTICLES);
-		emitting = false;
-	}
-
-	ParticleEmitter(int range_x, int range_y,
-		int max_size, int min_size,
-		int tx, int ty, float gx, float gy, Uint32 lifetime)
-		: range_x{ range_x }, range_y{ range_y },
-		min_w{ min_size }, max_w{ max_size }, min_h{ min_size }, max_h{ max_size },
-		tx{ tx }, ty{ ty }, gx{ gx }, gy{ gy }, lifetime{ lifetime }, finished{false},
-		MAX_PARTICLES{ 200 } {
-
-
-		particles.reserve(MAX_PARTICLES);
-		emitting = false;
-	}
-
-
-	void emit(int x, int y, Uint32 emitter_lifetime) {
-		//if (particles.size() < MAX_PARTICLES) {
-		//	particles.emplace_back(
-		//		random_between(x - range_x, x + range_x),
-		//		random_between(y - range_y, y + range_y),
-		//		random_between(min_w, max_w),
-		//		random_between(min_h, max_h),
-		//		15, 10,
-		//		lifetime, gx, gy);
-		//}
-		particles.clear();
-		this->emitter_lifetime = emitter_lifetime;
-		life.start();
-
-		this->x = x;
-		this->y = y;
-		//std::cout << "start emitting: " << x << " - " << y << "\n";
-		emitting = true;
-	}
-
-	virtual void push_particle() = 0;
-
-	virtual void update() = 0;
-
-	void draw() {
-		for (auto& p : particles) {
-			p.draw();
-		}
-	}
-
-	Uint32 lifetime;
-	Timer life;
-	Uint32 emitter_lifetime{0};
-	std::vector<Particle> particles;
-	const size_t MAX_PARTICLES;
-
-	int x, y, range_x, range_y, min_w, max_w, min_h, max_h, tx, ty;
-	float gx, gy;
-	bool emitting;
-	bool finished;
-};
-
 struct EnemyParticleEmitter : ParticleEmitter {
 
 	EnemyParticleEmitter() : ParticleEmitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500)
@@ -303,10 +56,10 @@ struct EnemyParticleEmitter : ParticleEmitter {
 	void push_particle() override {
 		if (particles.size() < MAX_PARTICLES) {
 			particles.emplace_back(
-				random_between(x - range_x, x + range_x),
-				random_between(y - range_y, y + range_y),
-				random_between(min_w, max_w),
-				random_between(min_h, max_h),
+				Helpers::Random::random_between(x - range_x, x + range_x),
+				Helpers::Random::random_between(y - range_y, y + range_y),
+				Helpers::Random::random_between(min_w, max_w),
+				Helpers::Random::random_between(min_h, max_h),
 				15, 10,
 				lifetime, gx, gy);
 		}
@@ -340,14 +93,14 @@ struct EnemyCrossParticleEmitter : ParticleEmitter {
 
 	void push_particle() override {
 		if (particles.size() < MAX_PARTICLES) {
-			float _gy = random_betweenf(-0.1f, 0.3f );
-			float _gx = random_betweenf(-0.1f, 0.1f);
-			random_between(0, 2) == 0 ? _gx = 0.0f : _gy = 0.0f;
+			float _gy = Helpers::Random::random_betweenf(-0.1f, 0.3f );
+			float _gx = Helpers::Random::random_betweenf(-0.1f, 0.1f);
+			Helpers::Random::random_between(0, 2) == 0 ? _gx = 0.0f : _gy = 0.0f;
 			particles.emplace_back(
-				random_between(x - range_x, x + range_x),
-				random_between(y - range_y, y + range_y),
-				random_between(min_w, max_w),
-				random_between(min_h, max_h),
+				Helpers::Random::random_between(x - range_x, x + range_x),
+				Helpers::Random::random_between(y - range_y, y + range_y),
+				Helpers::Random::random_between(min_w, max_w),
+				Helpers::Random::random_between(min_h, max_h),
 				15, 10,
 				lifetime, _gx, _gy);
 		}
@@ -372,191 +125,13 @@ struct EnemyCrossParticleEmitter : ParticleEmitter {
 	}
 };
 
-struct GameObject;
 
-struct InputHandler
-{
-	virtual void handle_input(GameObject& gameobject) = 0;
 
-	bool pressed[512]{false};
-	SDL_Scancode last_scancode;
-};
 
-struct AI
-{
-	virtual void update(GameObject& gameobject) = 0;
-};
-
-struct Animation
-{
-	virtual void update(GameObject& gameobject) = 0;
-
-	Timer timer;
-};
-
-struct Emitter
-{
-	Emitter(GameObject& gameobject) : gameobject{gameobject} {
-		
-	}
-
-	virtual void emit() = 0;
-	virtual void update() = 0;
-	virtual void draw() = 0;
-
-	//std::unique_ptr<ParticleEmitter> emitter{ nullptr };
-	ParticleEmitter* emitter{ nullptr };
-	GameObject& gameobject;
-};
-
-//22 hor
-struct GameObject
-{
-	GameObject(int x, int y, int w, int h, int tilex, int tiley, std::string tag) :
-		tile{ tile }, dst{ x,y,w,h }, dst_camera{x,y,w,h}, src{ tilex * 16,tiley * 16,16,16 },
-		angle{ 0.0 }, flip{ SDL_FLIP_NONE }, tag{ tag }, active{true}{
-	}
-
-	void draw() {
-		if (active) {
-			dst_camera.x = dst.x + camera_x;
-			dst_camera.y = dst.y + camera_y;
-			SDL_RenderCopyEx(SDL::Context::renderer, Assets::Sheet::texture, &src, &dst_camera, angle+camera_angle, NULL, flip);
-		}
-
-		if (emitter) emitter->draw();
-	}
-	
-	void set_input_handler(std::unique_ptr<InputHandler> ptr) {
-		input_handler = std::move(ptr);
-	}
-
-	void set_ai(std::unique_ptr<AI> ptr) {
-		ai = std::move(ptr);
-	}
-
-	void set_animation(std::unique_ptr<Animation> ptr) {
-		animation = std::move(ptr);
-	}
-
-	void set_emitter(std::unique_ptr<ParticleEmitter> ptr) {
-		emitter = std::move(ptr);
-	}
-
-	int tile;
-	double angle;
-	SDL_RendererFlip flip;
-	SDL_Rect dst, src, dst_camera;
-	std::string tag;
-	bool active;
-
-	std::unique_ptr<InputHandler> input_handler{ nullptr };
-	std::unique_ptr<AI> ai{ nullptr };
-	std::unique_ptr<Animation> animation{ nullptr };
-	std::unique_ptr<ParticleEmitter> emitter{ nullptr };
-	//updater()??
-
-};
-
-struct Button
-{
-	Button(int x, int y, int w, int h, std::string text, int margin) :
-		rct{x,y,w,h}, text{text,x+margin,y+margin,w-margin*2,h-margin*2},
-		text_str{text},
-		selected{false},
-		color{255,0,0,255}
-	{
-		std::cout << "buttoin created: " <<  x << "-" << y << "-" << w << "-" << h << "-" << margin << "\n";
-		
-	}
-
-	void draw() {
-		SDL_SetRenderDrawColor(SDL::Context::renderer, color.r,color.g,color.b,color.a);
-		SDL_RenderFillRect(SDL::Context::renderer, &rct);
-		SDL_SetRenderDrawColor(SDL::Context::renderer, 255, 255, 255, 255);
-		text.render();
-	}
-
-	bool handle_input() {
-		mx = SDL::Context::event.button.x;
-		my = SDL::Context::event.button.y;
-
-		//std::cout << x << "\n";
-		if (mx > rct.x && mx<rct.x + rct.w
-			&& my > rct.y && my < rct.y + rct.h) {
-			
-			color.r = 0;
-			if(SDL_GetMouseState(&mx, &my) && SDL_BUTTON(SDL_BUTTON_LEFT)) return true;
-		} else {
-			color.r = 255;
-		}
-		
-
-		return false;
-	}
-
-	SDL_Rect rct;
-	std::string text_str;
-	char tag;
-	Text text;
-	bool selected;
-	int mx{0}, my{ 0 };
-	SDL_Color color;
-};
-
-struct Menu
-{
-	Menu(int x, int y, int w, int h, int padding) {
-		buttons.reserve(3);
-
-		int bh = (h / 3);		
-		int by = y;
-		buttons.emplace_back(x, by, w, bh, "PLAY", padding);
-		by += bh+padding;
-		buttons.emplace_back(x, by, w, bh, "OPTIONS", padding);
-		by += bh+padding;
-		buttons.emplace_back(x, by, w, bh, "EXIT", padding);
-	}
-
-	int handle_input() {
-		for (auto& b : buttons) {
-			if (b.handle_input()) {
-				if (b.text_str == "PLAY") {
-					SDL_Log("PLAY");
-					return 1;
-				}
-				if (b.text_str == "OPTIONS") {
-					SDL_Log("OPTIONS");
-					return 2;
-				}
-				if (b.text_str == "EXIT") {
-					SDL_Log("EXIT");
-					return 3;
-				}
-			}
-		}
-
-		return 0;
-	}
-
-	void draw() {
-		for (auto& b : buttons) {
-			b.draw();
-		}
-	}
-
-	std::vector<Button> buttons;
-};
 
 ///////////////////
 //////STATES///////
 ///////////////////
-struct State
-{
-	virtual std::unique_ptr<State> update() = 0;
-	virtual std::unique_ptr<State> handle_input() = 0;
-	virtual void draw() = 0;
-};
 
 struct PlayingState;
 struct MenuState : State
@@ -578,27 +153,6 @@ struct MenuState : State
 	Menu menu;
 };
 
-struct EnemyDeathEmitter : Emitter
-{
-	EnemyDeathEmitter(GameObject& gameobject) 
-		: Emitter(gameobject) {
-		//auto e = std::make_unique<ParticleEmitter>( 10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
-		//emitter = std::move(e);
-
-		//emitter = new ParticleEmitter(10, 10, 10, 10, 10, 15, 0.0f, -0.05f, 500);
-	}
-
-	void emit() override {
-		emitter->emit(gameobject.dst.x, gameobject.dst.y, 2000);
-	}
-
-	void update() override{
-		emitter->update();
-	}
-	void draw() override {
-		emitter->draw();
-	}
-};
 
 struct PlayerInputHandler : InputHandler
 {
@@ -857,8 +411,8 @@ struct EnemyMoveRandomlyTimedAI : AI {
 		if (walking_timer.getTicks() >= walk_interval) {
 			gameobject.dst.x += vx;
 			gameobject.dst.y += vy;
-			if (random_between(0, 7) == 0) vx = -v;
-			if (random_between(0, 7) == 0) vy = -v;
+			if (Helpers::Random::random_between(0, 7) == 0) vx = -v;
+			if (Helpers::Random::random_between(0, 7) == 0) vy = -v;
 
 			walking_timer.stop();
 			walking_timer.start();
@@ -940,7 +494,7 @@ struct EnemySpawnerAI : AI {
 	}
 
 	void add_enemy(int x, int y) {
-		auto& e = enemy_vec.emplace_back(x, y, 32, 32, random_between(25, 32), 6, "enemy");
+		auto& e = enemy_vec.emplace_back(x, y, 32, 32, Helpers::Random::random_between(25, 32), 6, "enemy");
 		//randomize ai
 		e.set_ai(std::make_unique<EnemyMoveRandomlyTimedAI>());
 		e.set_emitter(std::make_unique<EnemyCrossParticleEmitter>());
@@ -949,7 +503,7 @@ struct EnemySpawnerAI : AI {
 	void update(GameObject& gameobject) override {
 		
 		if (respawn_timer.getTicks() > respawn_interval) {
-			for (int i = 0; i < random_between(min,max); i++) {
+			for (int i = 0; i < Helpers::Random::random_between(min,max); i++) {
 				add_enemy(gameobject.dst.x, gameobject.dst.y);
 			}
 			respawn_timer.stop();
@@ -1169,7 +723,7 @@ struct Level
 	}
 
 	void add_reference_tile(int x, int y) {
-		reference_tiles.emplace_back(x, y, 32, 32, random_between(1, 5),0, "r_tile");
+		reference_tiles.emplace_back(x, y, 32, 32, Helpers::Random::random_between(1, 5),0, "r_tile");
 	}
 
 	void parse_map(std::string file_map_path) {
@@ -1580,15 +1134,13 @@ int main(int argc, char* args[])
 	(void)argc;
 	(void)args;
 
-	SDL::Context sdl_context("game");
+	SDL::Context sdl_context("game", screen_w, screen_h);
 	Assets::Sheet sheet;
 	bool running = true;
 
 	Uint32 startFTime = SDL_GetTicks();
 	float fps = (1.0f / 24.0f)*1000.0f;
 
-	std::vector<GameObject> objects;
-	
 	bool clicked = false;
 
 	Game game;
