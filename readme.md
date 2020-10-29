@@ -26,4 +26,4 @@
 ### Demo
 In the demo folder I wil be uploading the examples that I use to test features
 
-<img src="Mzzgj\Mzzgj\demo1.webp">
+<img src="Mzzgj\demo1.webp">
