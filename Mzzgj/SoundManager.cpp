@@ -7,10 +7,6 @@ std::unordered_map<std::string, Mix_Chunk*> SoundManager::chunks;
 SoundManager::SoundManager() {
 	//chuncks.reserve(10);
 
-	load("wilhelm", "wilhelm.wav");
-	load("guitarintro", "guitarintro.wav");
-	load("hipintro", "hipintro.wav");
-	load("sword", "sword.wav");
 
 	//chuncks.push_back(m);
 }

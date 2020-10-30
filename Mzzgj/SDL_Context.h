@@ -18,7 +18,7 @@ namespace SDL {
 		static TTF_Font* font;
 		static SDL_Event event;
 		bool running = false;
-
+		static int screen_w, screen_h;
 	private:
 		SDL_Window* window = NULL;
 	};

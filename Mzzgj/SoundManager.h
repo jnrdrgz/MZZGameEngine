@@ -8,7 +8,7 @@ struct SoundManager
 {
 	SoundManager();
 
-	void load(std::string name, std::string path);
+	static void load(std::string name, std::string path);
 
 	~SoundManager();
 
